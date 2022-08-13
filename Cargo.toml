@@ -7,3 +7,6 @@ edition = "2021"
 
 [dependencies]
 pcap = { version = "0.9", features = ["capture-stream"] }
+pktparse = "0.7.1"
+dns-parser = "0.8"
+tls-parser = "0.11"

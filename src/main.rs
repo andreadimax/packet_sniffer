@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 use pcap::{Device, PacketHeader};
 use std::thread;
 use std::sync::mpsc::{sync_channel, TryRecvError, SyncSender};
+mod parser;
 
 
 enum Message {
