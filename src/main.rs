@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 use pcap::{Device, PacketHeader};
 use std::thread;
-use std::sync::mpsc::{sync_channel, TryRecvError};
+use std::sync::mpsc::{sync_channel, TryRecvError, SyncSender};
 
 
 enum Message {
@@ -10,22 +10,30 @@ enum Message {
     PacketHeader(PacketHeader),
     Command(String) // resume and stop
 }
-fn capture(dvc: String, tx: std::sync::mpsc::SyncSender<Message>){
+
+fn capture(dvc: String, tx: SyncSender<Message>){
 
     println!("Capturing on device {}..", dvc);
     println!("Type stop if you want to pause..");
 
+    /* 
+        2 threads activated:
+            - t2 used to monitor user input asynchronously
+            - t1 used to perform the capture
+            - the channel below is used to send user input between this 2 threads
+    */
     let (send, rec) = sync_channel(1);
     let mut pause = false;
 
+    //user input thread
     let t2 = thread::spawn(move || loop {
         let mut buffer = String::new();
         std::io::stdin().read_line(&mut buffer).unwrap();
         send.send(buffer).unwrap();
     });
 
-
-   let t1 = thread::spawn(move || {
+    //capture thread
+    let t1 = thread::spawn(move || {
 
        let mut cap = pcap::Capture::from_device(dvc.as_str())
            .unwrap()
@@ -37,6 +45,8 @@ fn capture(dvc: String, tx: std::sync::mpsc::SyncSender<Message>){
 
        tx.send(Message::Device(dvc)).unwrap();
         loop  {
+
+            //check if there's a new input from user
             match rec.try_recv() {
                 Ok(key) => {
                     let command = key.trim();
@@ -57,6 +67,8 @@ fn capture(dvc: String, tx: std::sync::mpsc::SyncSender<Message>){
                 Err(TryRecvError::Empty) => (),
                 Err(TryRecvError::Disconnected) => panic!("Channel disconnected"),
             }
+
+            //user typed "stop"
             if pause == false {
                 let mut cap = cap.lock().unwrap();
                 let packet = cap.next();
@@ -87,6 +99,7 @@ fn capture(dvc: String, tx: std::sync::mpsc::SyncSender<Message>){
 
 fn main() {
 
+    //sync channel used to send data between capture thread and parser thread
     let (tx, rx) = sync_channel(256);
 
 
