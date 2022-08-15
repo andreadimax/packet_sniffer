@@ -7,7 +7,7 @@ mod parser;
 
 enum Message {
     Device(String),
-    Packet(Vec<u8>),
+    Packet(& 'static [u8]),
     PacketHeader(PacketHeader),
     Command(String) // resume and stop
 }
@@ -42,10 +42,13 @@ fn capture(dvc: String, tx: SyncSender<Message>){
            .open()
            .unwrap();
 
-       let cap = Arc::new(Mutex::new(cap));
+       //let cap = Arc::new(Mutex::new(cap));
+
 
        tx.send(Message::Device(dvc)).unwrap();
         loop  {
+
+            let packet_res = cap.next();
 
             //check if there's a new input from user
             match rec.try_recv() {
@@ -71,14 +74,14 @@ fn capture(dvc: String, tx: SyncSender<Message>){
 
             //user typed "stop"
             if pause == false {
-                let mut cap = cap.lock().unwrap();
-                let packet = cap.next();
-                match packet {
+                //let mut cap = cap.lock().unwrap();
+                
+                match packet_res {
                     Ok(packet) => {
                         let packet_header = packet.header;
                         println!("{:?}", packet.header);
                         let packet = packet.to_owned();
-                        tx.send(Message::Packet(packet.to_vec())).unwrap();
+                        tx.send(Message::Packet(packet.data)).unwrap();
                         tx.send(Message::PacketHeader(*packet_header)).unwrap()
                     },
                     Err(e) => {
