@@ -7,7 +7,7 @@ mod parser;
 
 enum Message {
     Device(String),
-    Packet(& 'static [u8]),
+    Packet(Vec<u8>),
     PacketHeader(PacketHeader),
     Command(String) // resume and stop
 }
@@ -27,7 +27,7 @@ fn capture(dvc: String, tx: SyncSender<Message>){
     let mut pause = false;
 
     //user input thread
-    let t2 = thread::spawn(move || loop {
+    let _t2 = thread::spawn(move || loop {
         let mut buffer = String::new();
         std::io::stdin().read_line(&mut buffer).unwrap();
         send.send(buffer).unwrap();
@@ -36,19 +36,16 @@ fn capture(dvc: String, tx: SyncSender<Message>){
     //capture thread
     let t1 = thread::spawn(move || {
 
-       let mut cap = pcap::Capture::from_device(dvc.as_str())
+       let  cap = pcap::Capture::from_device(dvc.as_str())
            .unwrap()
            .immediate_mode(true)
            .open()
            .unwrap();
 
-       //let cap = Arc::new(Mutex::new(cap));
-
+       let cap = Arc::new(Mutex::new(cap));
 
        tx.send(Message::Device(dvc)).unwrap();
         loop  {
-
-            let packet_res = cap.next();
 
             //check if there's a new input from user
             match rec.try_recv() {
@@ -74,14 +71,14 @@ fn capture(dvc: String, tx: SyncSender<Message>){
 
             //user typed "stop"
             if pause == false {
-                //let mut cap = cap.lock().unwrap();
-                
-                match packet_res {
+                let mut cap = cap.lock().unwrap();
+                let packet = cap.next();
+                match packet {
                     Ok(packet) => {
                         let packet_header = packet.header;
                         println!("{:?}", packet.header);
                         let packet = packet.to_owned();
-                        tx.send(Message::Packet(packet.data)).unwrap();
+                        tx.send(Message::Packet(packet.to_vec())).unwrap();
                         tx.send(Message::PacketHeader(*packet_header)).unwrap()
                     },
                     Err(e) => {
