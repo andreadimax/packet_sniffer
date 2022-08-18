@@ -304,7 +304,7 @@ mod protocols {
     use pktparse::tcp::{self, TcpHeader};
     use pktparse::udp::{self, UdpHeader};
     use pktparse::icmp::{self, IcmpHeader, IcmpCode};
-    use dns_parser::{self,Opcode};
+    use dns_parser::{self,Opcode, ResponseCode};
     use tls_parser::{self,TlsMessage, TlsRecordType};
     use super::packet::{PacketInfo};
 
@@ -583,15 +583,26 @@ mod protocols {
 
         match dns_frame_res {
             Ok(packet) => {
-                let code =  packet.header.opcode;
-                let queries = packet.questions;
+                let code =  packet.header.opcode;       //opcode
+                let qr = packet.header.query;             //query flag
+                let queries = packet.questions;  //list of queries
 
                 packet_info.set_protocol(Protocols::Dns);
 
                 match code {
                     Opcode::StandardQuery => {
 
-                        let mut info = String::from("DNS Standard query for ");
+                        let mut info = String::new();
+
+                        //queries can be requests or response depending on query flag in header
+                        match qr {
+                            true => {
+                                info = "DNS Request for ".to_string();
+                            },
+                            false => {
+                                info = "DNS Response for ".to_string();
+                            }
+                        }
 
                         //if it is a query put also query name in infos
                         for question in queries {
@@ -721,6 +732,118 @@ mod test{
         parse_tls}, 
         packet::PacketInfo, 
     };
+
+    /*  
+        ICMP Echo Request
+        - id: 164
+        - mac_src: 5c:fb:3a:ac:88:7f
+        - mac_dst: 5e:a2:04:91:72:bb
+        - ip_src: 192.168.1.165
+        - ip_dst: 192.168.1.158
+        - port_src: /
+        - port_dst: /
+        - additional_info: ICMP Echo request
+        - timestamp: 40.600289
+        - length: 74
+     */
+    static icmp_echo_request : [u8; 74] =
+    [0x5e, 0xa2, 0x04, 0x91, 0x72, 0xbb, 0x5c, 0xfb,
+    0x3a, 0xac, 0x88, 0x7f, 0x08, 0x00, 0x45, 0x00,
+    0x00, 0x3c, 0x9b, 0x6e, 0x00, 0x00, 0x80, 0x01,
+    0x1a, 0xbf, 0xc0, 0xa8, 0x01, 0xa5, 0xc0, 0xa8,
+    0x01, 0x9e, 0x08, 0x00, 0x4b, 0x48, 0x00, 0x01,
+    0x02, 0x13, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66,
+    0x67, 0x68, 0x69, 0x6a, 0x6b, 0x6c, 0x6d, 0x6e,
+    0x6f, 0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76,
+    0x77, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67,
+    0x68, 0x69];
+
+    /*
+    ICMP Echo Reply
+    -id: 165
+    - mac_src: 5c:fb:3a:ac:88:7f
+    - mac_dst: a4:91:b1:ae:aa:c2
+    - ip_src: 192.168.1.158
+    - ip_dst: 192.168.1.165
+    - port_src: /
+    - port_dst: /
+    - additional_info: ICMP Echo reply
+    - timestamp: 40.662638
+    - length: 74
+    */
+    static icmp_echo_reply : [u8; 74] =
+    [0x5c, 0xfb, 0x3a, 0xac, 0x88, 0x7f, 0x5e, 0xa2,
+    0x04, 0x91, 0x72, 0xbb, 0x08, 0x00, 0x45, 0x00,
+    0x00, 0x3c, 0x0e, 0xd1, 0x00, 0x00, 0x40, 0x01,
+    0xe7, 0x5c, 0xc0, 0xa8, 0x01, 0x9e, 0xc0, 0xa8,
+    0x01, 0xa5, 0x00, 0x00, 0x53, 0x48, 0x00, 0x01,
+    0x02, 0x13, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66,
+    0x67, 0x68, 0x69, 0x6a, 0x6b, 0x6c, 0x6d, 0x6e,
+    0x6f, 0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76,
+    0x77, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67,
+    0x68, 0x69];
+
+
+    /*
+        DNS Query Request for www.linkedin.com
+        - id: 185
+        - mac_src: 5c:fb:3a:ac:88:7f
+        - mac_dst: a4:91:b1:ae:aa:c2
+        - ip_src: 192.168.1.164
+        - ip_dst: 192.168.1.1
+        - port_src: 50490
+        - port_dst: 53
+        - additional_info: DNS Request for www.linkedin.com
+        - timestamp: 20.919885
+        - length: 76
+
+     */
+    static dns_request : [u8;76] = 
+    [0xa4, 0x91, 0xb1, 0xae, 0xaa, 0xc2, 0x5c, 0xfb,
+    0x3a, 0xac, 0x88, 0x7f, 0x08, 0x00, 0x45, 0x00,
+    0x00, 0x3e, 0xb2, 0xa9, 0x00, 0x00, 0x80, 0x11,
+    0x04, 0x10, 0xc0, 0xa8, 0x01, 0xa4, 0xc0, 0xa8,
+    0x01, 0x01, 0xc5, 0x3a, 0x00, 0x35, 0x00, 0x2a,
+    0x1f, 0x04, 0x9b, 0x22, 0x01, 0x00, 0x00, 0x01,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x77,
+    0x77, 0x77, 0x08, 0x6c, 0x69, 0x6e, 0x6b, 0x65,
+    0x64, 0x69, 0x6e, 0x03, 0x63, 0x6f, 0x6d, 0x00,
+    0x00, 0x01, 0x00, 0x01];
+
+    /*
+        DNS Query Response for www.linkedin.com
+        -id: 186
+        - mac_src: a4:91:b1:ae:aa:c2
+        - mac_dst: 5c:fb:3a:ac:88:7f
+        - ip_src: 192.168.1.1
+        - ip_dst: 192.168.1.164
+        - port_src: 53
+        - port_dst: 50490
+        - additional_info: DNS Response for www.linkedin.com
+        - timestamp: 20.919885
+        - length: 156
+     */
+    static dns_response : [u8; 156] =
+    [0x5c, 0xfb, 0x3a, 0xac, 0x88, 0x7f, 0xa4, 0x91,
+    0xb1, 0xae, 0xaa, 0xc2, 0x08, 0x00, 0x45, 0x00,
+    0x00, 0x8e, 0x07, 0xaf, 0x40, 0x00, 0x40, 0x11,
+    0xae, 0xba, 0xc0, 0xa8, 0x01, 0x01, 0xc0, 0xa8,
+    0x01, 0xa4, 0x00, 0x35, 0xc5, 0x3a, 0x00, 0x7a,
+    0x14, 0xbc, 0x9b, 0x22, 0x81, 0x80, 0x00, 0x01,
+    0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x03, 0x77,
+    0x77, 0x77, 0x08, 0x6c, 0x69, 0x6e, 0x6b, 0x65,
+    0x64, 0x69, 0x6e, 0x03, 0x63, 0x6f, 0x6d, 0x00,
+    0x00, 0x01, 0x00, 0x01, 0xc0, 0x0c, 0x00, 0x05,
+    0x00, 0x01, 0x00, 0x00, 0x00, 0xec, 0x00, 0x26,
+    0x10, 0x77, 0x77, 0x77, 0x2d, 0x6c, 0x69, 0x6e,
+    0x6b, 0x65, 0x64, 0x69, 0x6e, 0x2d, 0x63, 0x6f,
+    0x6d, 0x06, 0x6c, 0x2d, 0x30, 0x30, 0x30, 0x35,
+    0x08, 0x6c, 0x2d, 0x6d, 0x73, 0x65, 0x64, 0x67,
+    0x65, 0x03, 0x6e, 0x65, 0x74, 0x00, 0xc0, 0x2e,
+    0x00, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x34,
+    0x00, 0x02, 0xc0, 0x3f, 0xc0, 0x3f, 0x00, 0x01,
+    0x00, 0x01, 0x00, 0x00, 0x00, 0xb9, 0x00, 0x04,
+    0x0d, 0x6b, 0x2a, 0x0e];
 
     /*
         TLS Packet example with following fields:
@@ -1096,7 +1219,7 @@ mod test{
 
         let (remaining_2, _) = parse_tcp(&mut packet_info, remaining1).unwrap();
 
-        let (_) = parse_tls(&mut packet_info, &remaining_2).unwrap();
+        let _ = parse_tls(&mut packet_info, &remaining_2).unwrap();
 
         assert_eq!(packet_info.get_id(), 10);
         assert_eq!(packet_info.get_length(), 97);
@@ -1112,6 +1235,126 @@ mod test{
         
 
     }
+
+    #[test]
+    fn test_parse_dns(){
+
+        /* -- Testing DNS Request */
+        /* ---------------------- */
+
+        let mut packet_info = PacketInfo::new(76,20.919885,185);
+
+        let (remaining, _) = parse_ethernet(& mut packet_info, &dns_request).unwrap();
+
+        let (remaining1, _) = parse_ipv4(&mut packet_info, remaining).unwrap();
+
+        let (remaining_2, _) = parse_udp(&mut packet_info, remaining1).unwrap();
+
+        let _ = parse_dns(&mut packet_info, &remaining_2).unwrap();
+
+        assert_eq!(packet_info.get_id(), 185);
+        assert_eq!(packet_info.get_length(), 76);
+        assert_eq!(packet_info.get_protocol(), Protocols::Dns );
+        assert_eq!(packet_info.get_timestamp(), 20.919885);
+        assert_eq!(packet_info.get_mac_src(), Some("5C:FB:3A:AC:88:7F"));
+        assert_eq!(packet_info.get_mac_dst(), Some("A4:91:B1:AE:AA:C2"));
+        assert_eq!(packet_info.get_ip_src(), Some("192.168.1.164"));                         
+        assert_eq!(packet_info.get_ip_dst(), Some("192.168.1.1"));
+        assert_eq!(packet_info.get_port_src(), Some(50490));                       
+        assert_eq!(packet_info.get_port_dst(), Some(53));
+        assert_eq!(packet_info.get_info(), Some("DNS Request for www.linkedin.com"));
+
+        /* ---------------------- */
+
+        /* -- Testing DNS Response */
+        /* ----------------------- */
+
+        let mut packet_info_1 = PacketInfo::new(156,20.950381,186);
+
+        let (remaining, _) = parse_ethernet(& mut packet_info_1, &dns_response).unwrap();
+
+        let (remaining1, _) = parse_ipv4(&mut packet_info_1, remaining).unwrap();
+
+        let (remaining_2, _) = parse_udp(&mut packet_info_1, remaining1).unwrap();
+
+        let _ = parse_dns(&mut packet_info_1, &remaining_2).unwrap();
+
+        assert_eq!(packet_info_1.get_id(), 186);
+        assert_eq!(packet_info_1.get_length(), 156);
+        assert_eq!(packet_info_1.get_protocol(), Protocols::Dns );
+        assert_eq!(packet_info_1.get_timestamp(), 20.950381);
+        assert_eq!(packet_info_1.get_mac_src(), Some("A4:91:B1:AE:AA:C2"));
+        assert_eq!(packet_info_1.get_mac_dst(), Some("5C:FB:3A:AC:88:7F"));
+        assert_eq!(packet_info_1.get_ip_src(), Some("192.168.1.1"));                         
+        assert_eq!(packet_info_1.get_ip_dst(), Some("192.168.1.164"));
+        assert_eq!(packet_info_1.get_port_src(), Some(53));                       
+        assert_eq!(packet_info_1.get_port_dst(), Some(50490));
+        assert_eq!(packet_info_1.get_info(), Some("DNS Response for www.linkedin.com"));
+
+        /* ----------------------- */
+
+
+    }
+
+    #[test]
+    fn test_parse_icmp(){
+
+        /* -- Testing ICMP Echo Request -- */
+        /* ------------------------------- */
+
+        let mut packet_info = PacketInfo::new(74,40.600289,164);
+
+        let (remaining, _) = parse_ethernet(& mut packet_info, &icmp_echo_request).unwrap();
+
+        let (remaining1, _) = parse_ipv4(&mut packet_info, remaining).unwrap();
+
+        let (remaining_2, _) = parse_icmp(&mut packet_info, remaining1).unwrap();
+
+        
+
+        assert_eq!(packet_info.get_id(), 164);
+        assert_eq!(packet_info.get_length(), 74);
+        assert_eq!(packet_info.get_protocol(), Protocols::Icmp );
+        assert_eq!(packet_info.get_timestamp(), 40.600289);
+        assert_eq!(packet_info.get_mac_src(), Some("5C:FB:3A:AC:88:7F"));
+        assert_eq!(packet_info.get_mac_dst(), Some("5E:A2:04:91:72:BB"));
+        assert_eq!(packet_info.get_ip_src(), Some("192.168.1.165"));                         
+        assert_eq!(packet_info.get_ip_dst(), Some("192.168.1.158"));
+        assert_eq!(packet_info.get_port_src(), None);                       
+        assert_eq!(packet_info.get_port_dst(), None);
+        assert_eq!(packet_info.get_info(), Some("ICMP Echo Request"));
+
+        /* ------------------------------- */
+
+        /* -- Testing ICMP Echo Reply -- */
+        /* ----------------------------- */
+
+        let mut packet_info_1 = PacketInfo::new(74,40.662638,165);
+
+        let (remaining, _) = parse_ethernet(& mut packet_info_1, &icmp_echo_reply).unwrap();
+
+        let (remaining1, _) = parse_ipv4(&mut packet_info_1, remaining).unwrap();
+
+        let (remaining_2, _) = parse_icmp(&mut packet_info_1, remaining1).unwrap();
+
+        
+
+        assert_eq!(packet_info_1.get_id(), 165);
+        assert_eq!(packet_info_1.get_length(), 74);
+        assert_eq!(packet_info_1.get_protocol(), Protocols::Icmp );
+        assert_eq!(packet_info_1.get_timestamp(), 40.662638);
+        assert_eq!(packet_info_1.get_mac_src(), Some("5E:A2:04:91:72:BB"));
+        assert_eq!(packet_info_1.get_mac_dst(), Some("5C:FB:3A:AC:88:7F"));
+        assert_eq!(packet_info_1.get_ip_src(), Some("192.168.1.158"));                         
+        assert_eq!(packet_info_1.get_ip_dst(), Some("192.168.1.165"));
+        assert_eq!(packet_info_1.get_port_src(), None);                       
+        assert_eq!(packet_info_1.get_port_dst(), None);
+        assert_eq!(packet_info_1.get_info(), Some("ICMP Echo Reply"));
+
+        /* ----------------------------- */
+    }
+
+
 
 
 }
