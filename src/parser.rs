@@ -4,7 +4,7 @@ use pktparse;
 use dns_parser;
 use tls_parser;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum ParsingError {
     GenericError(String),
     ArpParsingError,
@@ -770,13 +770,6 @@ mod protocols {
 
                         Ok(())
                     },
-                    IPProtocol::ICMP => {
-
-                        parse_icmp(packet_info, to_transport_layer) ?;
-
-                        Ok(())
-                        
-                    },
                     _ => {
                         return Err(ParsingError::GenericError("Format not supported yet".to_string()));
                     }
@@ -795,6 +788,8 @@ mod protocols {
 #[cfg(test)]
 mod test{
     use pktparse::{ethernet::{MacAddress, EtherType}, ip::IPProtocol};
+
+    use crate::parser::ParsingError;
 
     use super::{protocols::{mac_address_to_string, 
         parse_ethernet, 
@@ -1125,6 +1120,7 @@ mod test{
         assert_eq!(packet_info.get_mac_dst(), Some("5C:FB:3A:AC:88:7F"));
         assert_eq!(packet_info.get_ip_src(), None);                         //ip fields should not be set yet
         assert_eq!(packet_info.get_ip_dst(), None);
+        assert_eq!(packet_info.get_info(), None);
     }
 
     #[test]
@@ -1527,6 +1523,38 @@ mod test{
     0xb3, 0x1e, 0x3d, 0x1e, 0x7b, 0x7e, 0xcf, 0xde,
     0x53];
 
+    static tls_handshake : [u8; 99] =
+    [0x5c, 0xfb, 0x3a, 0xac, 0x88, 0x7f, 0xa4, 0x91,
+    0xb1, 0xae, 0xaa, 0xc2, 0x08, 0x00, 0x45, 0x00,
+    0x00, 0x5b, 0x8a, 0x77, 0x40, 0x00, 0x6d, 0x06,
+    0xff, 0x0e, 0x14, 0xbd, 0xad, 0x0c, 0xc0, 0xa8,
+    0x01, 0xa5, 0x01, 0xbb, 0xf5, 0xe1, 0xca, 0x18,
+    0x6e, 0x6f, 0x10, 0x10, 0x54, 0x35, 0x50, 0x18,
+    0x08, 0x03, 0xcd, 0xcf, 0x00, 0x00, 0x16, 0x03, 0x03, 0x00,
+    0x28, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x79, 0x17, 0xd3, 0xec, 0x55, 0xc6, 0x63,
+    0x1e, 0x9e, 0x90, 0xaf, 0x12, 0xfc, 0x13, 0x6a,
+    0xd0, 0x3c, 0x0f, 0xdb, 0x72, 0x07, 0xe6, 0xca,
+    0xb3, 0x1e, 0x3d, 0x1e, 0x7b, 0x7e, 0xcf, 0xde,
+    0x53];
+
+    static tls_heartbeat : [u8; 99] =
+    [0x5c, 0xfb, 0x3a, 0xac, 0x88, 0x7f, 0xa4, 0x91,
+    0xb1, 0xae, 0xaa, 0xc2, 0x08, 0x00, 0x45, 0x00,
+    0x00, 0x5b, 0x8a, 0x77, 0x40, 0x00, 0x6d, 0x06,
+    0xff, 0x0e, 0x14, 0xbd, 0xad, 0x0c, 0xc0, 0xa8,
+    0x01, 0xa5, 0x01, 0xbb, 0xf5, 0xe1, 0xca, 0x18,
+    0x6e, 0x6f, 0x10, 0x10, 0x54, 0x35, 0x50, 0x18,
+    0x08, 0x03, 0xcd, 0xcf, 0x00, 0x00, 0x18, 0x03, 0x03, 0x00,
+    0x28, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x79, 0x17, 0xd3, 0xec, 0x55, 0xc6, 0x63,
+    0x1e, 0x9e, 0x90, 0xaf, 0x12, 0xfc, 0x13, 0x6a,
+    0xd0, 0x3c, 0x0f, 0xdb, 0x72, 0x07, 0xe6, 0xca,
+    0xb3, 0x1e, 0x3d, 0x1e, 0x7b, 0x7e, 0xcf, 0xde,
+    0x53];
+
+    
+
     static udp_with_ipv6 : [u8; 718 ] =
     [0x33, 0x33, 0x00, 0x00, 0x00, 0x0c, 0x00, 0xdb,
     0xdf, 0x90, 0xe0, 0x52, 0x86, 0xdd, 0x60, 0x0e,
@@ -1619,6 +1647,19 @@ mod test{
     0x73, 0x6f, 0x61, 0x70, 0x3a, 0x45, 0x6e, 0x76,
     0x65, 0x6c, 0x6f, 0x70, 0x65, 0x3e];
 
+    /* -- Packet not supported -- */
+
+    static icmpv6 : [u8; 70] =
+    [0x33, 0x33, 0x00, 0x00, 0x00, 0x02, 0x5e, 0xa2,
+    0x04, 0x91, 0x72, 0xbb, 0x86, 0xdd, 0x60, 0x00,
+    0x00, 0x00, 0x00, 0x10, 0x3a, 0xff, 0xfe, 0x80,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x5c, 0xa2,
+    0x04, 0xff, 0xfe, 0x91, 0x72, 0xbb, 0xff, 0x02,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x85, 0x00,
+    0xd3, 0x50, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01,
+    0x5e, 0xa2, 0x04, 0x91, 0x72, 0xbb];
+
     #[test]
     fn test_parse_packets(){
 
@@ -1700,6 +1741,62 @@ mod test{
 
         /* ----------- */
 
+        /* Testing TLS */
+
+        let mut p9 = PacketInfo::new(42, 0.0, 0);
+        parse_packet(& mut p9, &tls_change_cipher).unwrap();
+
+        assert_eq!(p9.get_protocol(), Protocols::Tls);
+        assert_eq!(p9.get_mac_src(), Some("A4:91:B1:AE:AA:C2"));
+        assert_eq!(p9.get_mac_dst(), Some("5C:FB:3A:AC:88:7F"));
+        assert_eq!(p9.get_ip_src(), Some("20.189.173.12"));
+        assert_eq!(p9.get_ip_dst(), Some("192.168.1.165"));
+        assert_eq!(p9.get_port_dst(), Some(62945));
+        assert_eq!(p9.get_port_src(), Some(443));
+        assert_eq!(p9.get_info(), Some("TLS ChangeCipherSpec"));
+
+
+        let mut p10 = PacketInfo::new(42, 0.0, 0);
+        parse_packet(& mut p10, &tls_handshake).unwrap();
+
+        assert_eq!(p10.get_protocol(), Protocols::Tls);
+        assert_eq!(p10.get_mac_src(), Some("A4:91:B1:AE:AA:C2"));
+        assert_eq!(p10.get_mac_dst(), Some("5C:FB:3A:AC:88:7F"));
+        assert_eq!(p10.get_ip_src(), Some("20.189.173.12"));
+        assert_eq!(p10.get_ip_dst(), Some("192.168.1.165"));
+        assert_eq!(p10.get_port_dst(), Some(62945));
+        assert_eq!(p10.get_port_src(), Some(443));
+        assert_eq!(p10.get_info(), Some("TLS Handshake"));
+
+        let mut p11 = PacketInfo::new(42, 0.0, 0);
+        assert_eq!(p11.get_mac_dst(), None);
+        assert_eq!(p11.get_mac_src(), None);
+
+        parse_packet(& mut p11, &tls_heartbeat).unwrap();
+
+        assert_eq!(p11.get_protocol(), Protocols::Tls);
+        assert_eq!(p11.get_mac_src(), Some("A4:91:B1:AE:AA:C2"));
+        assert_eq!(p11.set_mac_src("prova"), Err(ParsingError::GenericError("trying to set an already present mac src".to_string())));
+        assert_eq!(p11.get_mac_dst(), Some("5C:FB:3A:AC:88:7F"));
+        assert_eq!(p11.set_mac_dst("prova"), Err(ParsingError::GenericError("trying to set an already present mac dst".to_string())));
+        assert_eq!(p11.get_ip_src(), Some("20.189.173.12"));
+        assert_eq!(p11.set_ip_src("prova"), Err(ParsingError::GenericError("trying to set an already present ip src".to_string())));
+        assert_eq!(p11.get_ip_dst(), Some("192.168.1.165"));
+        assert_eq!(p11.set_ip_dst("prova"), Err(ParsingError::GenericError("trying to set an already present ip dst".to_string())));
+        assert_eq!(p11.get_port_dst(), Some(62945));
+        assert_eq!(p11.set_port_dst(0), Err(ParsingError::GenericError("trying to set an already present port dst".to_string())));
+        assert_eq!(p11.get_port_src(), Some(443));
+        assert_eq!(p11.set_port_src(0), Err(ParsingError::GenericError("trying to set an already present port src".to_string())));
+        assert_eq!(p11.get_info(), Some("TLS Heartbeat"));
+
+
+        /* ----------- */
+
+        let mut p12 = PacketInfo::new(42, 0.0, 0);
+        assert_eq!(p12.get_mac_dst(), None);
+        assert_eq!(p12.get_mac_src(), None);
+
+        assert_eq!(parse_packet(& mut p12, &icmpv6), Err(ParsingError::GenericError("Format not supported yet".to_string())));
 
 
     }
