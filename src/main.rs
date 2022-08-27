@@ -1,18 +1,22 @@
+
 use std::sync::{Arc, Mutex};
-use pcap::{Device, PacketHeader};
+use pcap::{Device, PacketHeader, Packet};
 use std::thread;
-use std::sync::mpsc::{sync_channel, TryRecvError, SyncSender};
+use std::sync::mpsc::{sync_channel, TryRecvError, SyncSender, Receiver};
 mod parser;
 
-
-enum Message {
+enum Message{
     Device(String),
     Packet(Vec<u8>),
     PacketHeader(PacketHeader),
     Command(String) // resume and stop
 }
 
-fn capture(dvc: String, tx: SyncSender<Message>){
+
+fn capture(dvc: String, tx: SyncSender<Message>, rx: Receiver<Message>){
+
+    use parser::packet::{PacketInfo};
+    use parser::protocols::parse_packet;
 
     println!("Capturing on device {}..", dvc);
     println!("Type stop if you want to pause..");
@@ -34,7 +38,7 @@ fn capture(dvc: String, tx: SyncSender<Message>){
     });
 
     //capture thread
-    let t1 = thread::spawn(move || {
+    let t1 = thread::spawn(move    || {
 
        let  cap = pcap::Capture::from_device(dvc.as_str())
            .unwrap()
@@ -69,17 +73,19 @@ fn capture(dvc: String, tx: SyncSender<Message>){
                 Err(TryRecvError::Disconnected) => panic!("Channel disconnected"),
             }
 
-            //user typed "stop"
             if pause == false {
                 let mut cap = cap.lock().unwrap();
                 let packet = cap.next();
                 match packet {
                     Ok(packet) => {
-                        let packet_header = packet.header;
-                        println!("{:?}", packet.header);
-                        let packet = packet.to_owned();
+                        //let packet_header = packet.header;
+                        // println!("{:?}", format!(
+                        //     "{}.{:06}",
+                        //     &packet.header.ts.tv_sec, &packet.header.ts.tv_usec
+                        // ).parse::<f64>());
+                        //let packet = packet.clone();
+                        tx.send(Message::PacketHeader(*packet.header)).unwrap();
                         tx.send(Message::Packet(packet.to_vec())).unwrap();
-                        tx.send(Message::PacketHeader(*packet_header)).unwrap()
                     },
                     Err(e) => {
                         println!("{}", format!("{:?}", e));
@@ -93,10 +99,54 @@ fn capture(dvc: String, tx: SyncSender<Message>){
 
    });
 
+   let parser_thread = thread::spawn(move || {
+
+        let mut counter: usize = 0;
+
+        loop{
+            let message = rx.recv().unwrap();
+
+            match message {
+                Message::PacketHeader(ph) => {
+                    let ts = format!("{}.{:06}",
+                        &ph.ts.tv_sec, &ph.ts.tv_usec
+                    ).parse::<f64>().unwrap();
+                    let mut packet = PacketInfo::new(ph.caplen as usize, ts, counter);
+                    counter += 1;
+
+                    let message_1 = rx.recv().unwrap();
+
+                    match message_1 {
+                        Message::Packet(data) => {
+                            match parse_packet(& mut packet, &data).err(){
+                                Some(e) => {
+                                    eprintln!("{}", e);
+                                },
+                                None => {
+                                    println!("{}", packet);
+                                }
+                            }
+                        },
+                        _ => {
+                            eprintln!("Error in parsing: Not received a packet after a packet header!");
+                        }
+                    }
+                },
+                _ => {
+
+                }
+            }
+            
+        }
+    });
+
+
   t1.join().unwrap();
+  parser_thread.join().unwrap();
+
+
 
 }
-
 
 fn main() {
 
@@ -123,8 +173,9 @@ fn main() {
 
     //user input
     let mut device_to_monitor = String::new();
+    let mut dvc = String::new();
 
-    loop {
+    'outer:  loop {
         println!("\nType the device you want to monitor or quit to exit:");
         device_to_monitor.clear();
         std::io::stdin().read_line(&mut device_to_monitor).unwrap();
@@ -139,13 +190,14 @@ fn main() {
             _ => {
                 for device in &devices_list {
                     if device.name == device_to_monitor {
-                        let dvc = device_to_monitor.clone();
-                        let tx = tx.clone();
-                        capture(dvc, tx);
-
+                        dvc = device_to_monitor.clone();
+                        break 'outer;
                     }
                 }
             }
         }
     }
+
+    //let tx = tx.clone();
+    capture(dvc, tx, rx);
 }

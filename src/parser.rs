@@ -60,7 +60,9 @@ impl Display for ParsingError {
 impl Error for ParsingError {}
 
 
-mod packet {
+pub mod packet {
+    use std::fmt::{Display, Formatter};
+
     use super::{protocols::Protocols, ParsingError};
 
 
@@ -76,6 +78,22 @@ mod packet {
         protocol: Protocols,
         length: usize,
         timestamp: f64
+    }
+
+    impl Display for PacketInfo {
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{} | {} | {} | {} | {} | {} | {} | {} | {:?} | {} | {}", self.get_id(),
+                                                                            self.get_mac_src().or(Some("")).unwrap(),
+                                                                            self.get_mac_dst().or(Some("")).unwrap(),
+                                                                        self.get_ip_src().or(Some("")).unwrap(),
+                                                                    self.get_ip_dst().or(Some("")).unwrap(),
+                                                                self.get_port_src().or(Some(0)).unwrap(),
+                                                            self.get_port_dst().or(Some(0)).unwrap(),
+                                                            self.get_info().or(Some("")).unwrap(),
+                                                        self.get_protocol(),
+                                                    self.get_length(),
+                                                self.get_timestamp())
+        }
     }
 
     
@@ -288,7 +306,7 @@ mod packet {
 
 }
 
-mod protocols {
+pub mod protocols {
     use pktparse::ethernet::{self, EthernetFrame, MacAddress, EtherType};
     use pktparse::ip::IPProtocol;
     use pktparse::ipv4::{self, IPv4Header};
@@ -297,7 +315,7 @@ mod protocols {
     use pktparse::tcp::{self, TcpHeader};
     use pktparse::udp::{self, UdpHeader};
     use pktparse::icmp::{self, IcmpHeader, IcmpCode};
-    use dns_parser::{self,Opcode, ResponseCode};
+    use dns_parser::{self,Opcode};
     use tls_parser::{self,TlsMessage, TlsRecordType};
     use super::packet::{PacketInfo};
 
