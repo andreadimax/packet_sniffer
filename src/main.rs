@@ -2,7 +2,7 @@
 use std::sync::{Arc, Mutex};
 use pcap::{Device, PacketHeader, Packet};
 use std::thread;
-use std::sync::mpsc::{sync_channel, TryRecvError, SyncSender, Receiver};
+use std::sync::mpsc::{sync_channel, TryRecvError, SyncSender, Receiver, RecvError};
 mod parser;
 
 enum Message{
@@ -40,11 +40,13 @@ fn capture(dvc: String, tx: SyncSender<Message>, rx: Receiver<Message>){
     //capture thread
     let t1 = thread::spawn(move    || {
 
-       let  cap = pcap::Capture::from_device(dvc.as_str())
+       let mut cap = pcap::Capture::from_device(dvc.as_str())
            .unwrap()
            .immediate_mode(true)
            .open()
            .unwrap();
+
+       cap = cap.setnonblock().unwrap();
 
        let cap = Arc::new(Mutex::new(cap));
 
@@ -52,25 +54,59 @@ fn capture(dvc: String, tx: SyncSender<Message>, rx: Receiver<Message>){
         loop  {
 
             //check if there's a new input from user
-            match rec.try_recv() {
-                Ok(key) => {
-                    let command = key.trim();
-                    match command {
-                        "stop" => {
-                            println!("Capture stopped. Type resume to restart.");
-                            pause = true;
-                            tx.send(Message::Command(String::from(command))).unwrap();
-                        },
-                        "resume" => {
-                            println!("Capture resumed");
-                            pause = false;
-                            tx.send(Message::Command(String::from(command))).unwrap();
-                        },
-                        _ => println!("Wrong command")
-                    }
-                } ,
-                Err(TryRecvError::Empty) => (),
-                Err(TryRecvError::Disconnected) => panic!("Channel disconnected"),
+
+            //if capture is in progress don't block it, using try_recv
+            if pause == false {
+                match rec.try_recv() {
+                    Ok(key) => {
+                        let command = key.trim();
+                        match command {
+                            "stop" => {
+                                println!("Capture stopped. Type 'resume' to restart.");
+                                pause = true;
+                                tx.send(Message::Command(String::from(command))).unwrap();
+                            },
+                            "resume" => {
+                                println!("Capture resumed");
+                                pause = false;
+                                tx.send(Message::Command(String::from(command))).unwrap();
+                            },
+                            "quit" => {
+                                println!("Quitting...");
+                                break;
+                            },
+                            _ => println!("Wrong command")
+                        }
+                    } ,
+                    Err(TryRecvError::Empty) => (),
+                    Err(TryRecvError::Disconnected) => panic!("Channel disconnected"),
+                }
+            }
+            //if capture not in progress we can use recv
+            else{
+                match rec.recv() {
+                    Ok(key) => {
+                        let command = key.trim();
+                        match command {
+                            "stop" => {
+                                println!("Capture stopped. Type 'resume' to restart.");
+                                pause = true;
+                                tx.send(Message::Command(String::from(command))).unwrap();
+                            },
+                            "resume" => {
+                                println!("Capture resumed");
+                                pause = false;
+                                tx.send(Message::Command(String::from(command))).unwrap();
+                            },
+                            "quit" => {
+                                println!("Quitting...");
+                                break;
+                            },
+                            _ => println!("Wrong command")
+                        }
+                    } ,
+                    Err(RecvError) => panic!("Channel disconnected"),
+                }
             }
 
             if pause == false {
@@ -78,18 +114,10 @@ fn capture(dvc: String, tx: SyncSender<Message>, rx: Receiver<Message>){
                 let packet = cap.next();
                 match packet {
                     Ok(packet) => {
-                        //let packet_header = packet.header;
-                        // println!("{:?}", format!(
-                        //     "{}.{:06}",
-                        //     &packet.header.ts.tv_sec, &packet.header.ts.tv_usec
-                        // ).parse::<f64>());
-                        //let packet = packet.clone();
                         tx.send(Message::PacketHeader(*packet.header)).unwrap();
                         tx.send(Message::Packet(packet.to_vec())).unwrap();
                     },
-                    Err(e) => {
-                        println!("{}", format!("{:?}", e));
-                        break;
+                    Err(_) => {
                     }
                 }
             }
@@ -104,7 +132,14 @@ fn capture(dvc: String, tx: SyncSender<Message>, rx: Receiver<Message>){
         let mut counter: usize = 0;
 
         loop{
-            let message = rx.recv().unwrap();
+            let message = match rx.recv() {
+                Ok(m) => {
+                    m
+                },
+                _ => {
+                    break;
+                }
+            };
 
             match message {
                 Message::PacketHeader(ph) => {
