@@ -12,6 +12,11 @@ enum Message{
     Command(String) // resume and stop
 }
 
+#[cfg(windows)]
+const LINE_ENDING: &'static str = "\r\n";
+#[cfg(not(windows))]
+const LINE_ENDING: &'static str = "\n";
+
 
 fn capture(dvc: String, tx: SyncSender<Message>, rx: Receiver<Message>){
 
@@ -215,7 +220,7 @@ fn main() {
         device_to_monitor.clear();
         std::io::stdin().read_line(&mut device_to_monitor).unwrap();
 
-        device_to_monitor = device_to_monitor.replace("\n", "");
+        device_to_monitor = device_to_monitor.replace(LINE_ENDING, "");
 
         match device_to_monitor.as_str() {
             "quit" => {
