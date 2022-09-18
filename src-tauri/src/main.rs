@@ -192,7 +192,8 @@ fn capture(dvc: String, tx: SyncSender<Message>, rx: Receiver<Message>){
 
 }
 
-fn list_devices<R: tauri::Runtime>(manager: &impl Manager<R>){
+#[tauri::command]
+fn list_devices() -> Vec<String>{
     //get devices list
     let devices_list = Device::list().unwrap();
 
@@ -210,7 +211,7 @@ fn list_devices<R: tauri::Runtime>(manager: &impl Manager<R>){
         }
     }
 
-    manager.emit_all("devices_list", devices_vec).unwrap();
+    devices_vec
 
 }
 
@@ -267,14 +268,7 @@ fn main() {
     capture(dvc, tx, rx);
 
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![greet])
-        .setup(|app| {
-            let app_handle = app.handle();
-
-            list_devices(&app_handle);
-
-            Ok(())
-        })
+        .invoke_handler(tauri::generate_handler![list_devices])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

@@ -1,4 +1,4 @@
-const { invoke } = window.__TAURI__.tauri;
+const { invoke, listen} = window.__TAURI__.tauri;
 
 let greetInputEl;
 let greetMsgEl;
@@ -13,18 +13,20 @@ async function greet() {
   greetMsgEl.textContent = await invoke("greet", { name: greetInputEl.value });
 }
 
-await listen("devices_list", (event) => {
+invoke("list_devices").then((event) => {
   console.log("js: devices_list: " + event)
-  let devices_list = event.payload;
+  let devices_list = event;
 
   let select = document.getElementById("select");
 
-  for (const device in devices_list) {
+  for (let index = 0; index < devices_list.length; index++) {
+    let device = event[index]
     let option = document.createElement("option")
-    button.innerHTML = device
+    option.innerHTML = device
     select.appendChild(option)
-    
   }
+
+ 
 })
 
 window.greet = greet;
