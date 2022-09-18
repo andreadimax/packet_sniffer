@@ -13,4 +13,18 @@ async function greet() {
   greetMsgEl.textContent = await invoke("greet", { name: greetInputEl.value });
 }
 
+await listen("devices_list", (event) => {
+  console.log("js: devices_list: " + event)
+  let devices_list = event.payload;
+
+  let select = document.getElementById("select");
+
+  for (const device in devices_list) {
+    let option = document.createElement("option")
+    button.innerHTML = device
+    select.appendChild(option)
+    
+  }
+})
+
 window.greet = greet;
