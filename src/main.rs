@@ -1,11 +1,6 @@
-#![cfg_attr(
-    all(not(debug_assertions), target_os = "windows"),
-    windows_subsystem = "windows"
-)]
 
 use std::sync::{Arc, Mutex};
 use pcap::{Device, PacketHeader, Packet};
-use tauri::Manager;
 use std::thread;
 use std::sync::mpsc::{sync_channel, TryRecvError, SyncSender, Receiver, RecvError};
 mod parser;
@@ -186,32 +181,10 @@ fn capture(dvc: String, tx: SyncSender<Message>, rx: Receiver<Message>){
     });
 
 
- 
+  t1.join().unwrap();
+  parser_thread.join().unwrap();
 
 
-
-}
-
-#[tauri::command]
-fn list_devices() -> Vec<String>{
-    //get devices list
-    let devices_list = Device::list().unwrap();
-
-    let mut devices_vec = Vec::<String>::new();
-
-
-    for device in &devices_list {
-        match &device.desc {
-            Some(description) => {
-                devices_vec.push(format!("{} - {}", &device.name, String::from(description)));
-            },
-            None => {
-                devices_vec.push(format!("{} - No description available", &device.name));
-            }
-        }
-    }
-
-    devices_vec
 
 }
 
@@ -220,9 +193,6 @@ fn main() {
     //sync channel used to send data between capture thread and parser thread
     let (tx, rx) = sync_channel(256);
 
-    //user input
-    let mut device_to_monitor = String::new();
-    let mut dvc = String::new();
 
     //get devices list
     let devices_list = Device::list().unwrap();
@@ -240,6 +210,10 @@ fn main() {
             }
         }
     }
+
+    //user input
+    let mut device_to_monitor = String::new();
+    let mut dvc = String::new();
 
     'outer:  loop {
         println!("\nType the device you want to monitor or quit to exit:");
@@ -266,15 +240,4 @@ fn main() {
 
     //let tx = tx.clone();
     capture(dvc, tx, rx);
-
-    tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![list_devices])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
-}
-
-// Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
 }
