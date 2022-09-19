@@ -1,8 +1,38 @@
 use std::{fmt::{Display, Formatter}, error::Error};
 
-use pktparse;
-use dns_parser;
-use tls_parser;
+/*
+    lib.rs - Andrea Di Mauro 288048 - Last Edit: 19/09/2022
+
+    Main library file for support the packet sniffing process of an application
+    The library is mainly composed by 2 modules:
+
+     - packet
+     - protocols
+
+    The first one define the Packet struct, used to collect info about the
+    packet during the processing of the binary data. In fact the user will
+    have to instantiate a PacketInfo struct and pass them to function
+    defined in the procotols module. Once the parsing is completed the
+    PacketInfo struct implement the Display trait to print easily the info
+    collected
+
+    The second one define all the functions used to parse the different
+    layers of the ISO/OSI strcuture. Supported layers are listed below.
+    A function, 'parse_packet', collect them and can be used to parse
+    directly an entire packet (for the only supported protocols)
+
+    Supported protocols:
+     - Ethernet
+     - Arp
+     - Ipv4
+     - Ipv6
+     - Tcp
+     - Udp
+     - Icmp version 4
+     - Dns
+     - Tls
+
+ */
 
 #[derive(Debug, PartialEq)]
 pub enum ParsingError {
@@ -16,12 +46,6 @@ pub enum ParsingError {
     DnsParsingError,
     TlsParsingError
 }
-
-// impl ParsingError {
-//     pub fn new_generic_error(msg: &str) -> ParsingError {
-//         ParsingError::GenericError(String::from(msg))
-//     }
-// }
 
 impl Display for ParsingError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -723,7 +747,10 @@ pub mod protocols {
             }
         }
     }
-
+    /*
+        Parse an entire packet.
+        It updates all the fields (when possible) of the PacketInfo struct
+    */
     pub fn parse_packet<'a>(packet_info: & mut PacketInfo, data: & 'a [u8]) -> Result<(), ParsingError> {
 
 
@@ -807,7 +834,7 @@ pub mod protocols {
 mod test{
     use pktparse::{ethernet::{MacAddress, EtherType}, ip::IPProtocol};
 
-    use crate::parser::ParsingError;
+    use crate::ParsingError;
 
     use super::{protocols::{mac_address_to_string, 
         parse_ethernet, 

@@ -10,3 +10,5 @@ pcap = { version = "0.9" }
 pktparse = "0.7.1"
 dns-parser = "0.8"
 tls-parser = "0.11"
+colored = "2"
+signal-hook = "0.3.14"
