@@ -1,10 +1,15 @@
 use colored::*;
 use pcap::{Device, Packet, PacketHeader};
 use signal_hook::SigId;
+use std::error::Error;
+use std::fmt::Display;
+use std::io::{self, stdout, Write};
 use std::iter::Enumerate;
+use std::num::ParseIntError;
 use std::sync::mpsc::{sync_channel, Receiver, RecvError, SyncSender, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Duration;
 
 enum Message {
     Device(String),
@@ -23,6 +28,39 @@ enum InfoType {
 const LINE_ENDING: &'static str = "\r\n";
 #[cfg(not(windows))]
 const LINE_ENDING: &'static str = "\n";
+
+#[derive(Debug)]
+enum ReadUserInputError {
+    IOError(io::Error),
+    InvalidInteger(ParseIntError),
+    TimeIntervalMaxExceeded,
+    TimeIntervalMinExceeded,
+    AbsentDevice,
+}
+impl From<io::Error> for ReadUserInputError {
+    fn from(e: io::Error) -> Self {
+        Self::IOError(e)
+    }
+}
+impl From<ParseIntError> for ReadUserInputError {
+    fn from(e: ParseIntError) -> Self {
+        Self::InvalidInteger(e)
+    }
+}
+impl Error for ReadUserInputError {}
+
+impl Display for ReadUserInputError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ReadUserInputError::InvalidInteger(_) => write!(f, "Input is not Valid"),
+            ReadUserInputError::IOError(_) => write!(f, "Reading Input Error"),
+            ReadUserInputError::AbsentDevice => write!(f, "There is not device for entered input"),
+            ReadUserInputError::TimeIntervalMaxExceeded => write!(f, "Time interlval too big"),
+            ReadUserInputError::TimeIntervalMinExceeded => write!(f, "Time interval too short"),
+        }
+    }
+}
+
 
 fn print_info(info: &str, info_type: InfoType) {
     match info_type {
@@ -217,6 +255,106 @@ fn main() {
     //sync channel used to send data between capture thread and parser thread
     let (tx, rx) = sync_channel(256);
 
+    //Device to sniff
+    let mut dvc = String::new();
+    //ReportTime Interval - Default -> 5 secs
+    let mut report_interval = Duration::new(5, 0);
+
+    println!("> Welcome in PacketSniffer (Rust Edition) By A. Di Mauro, M.Basilico, M.L.Colangelo");
+
+    'outer: loop {
+        println!("> Select an option:\n-Search available devices (Type 'devices' or 'd');\n-Quit (Type 'quit' or 'q')");
+
+        //Choice n.1 - Reading input
+        let mut input = String::new();
+        io::stdin().read_line(&mut input).unwrap();
+
+        //Choice n.1 - Clearing input
+        let mut new_input = input.trim().split_whitespace();
+        let mut command = new_input.next().unwrap();
+
+        //Choise n.1 - Matching input
+        match command {
+            "q" | "quit" => {
+                println!("Quitting...");
+                return;
+            }
+            comm => {
+                match comm {
+                    "devices" | "d" => {
+                        match set_device() {
+                            Ok(dvc_index) => {
+                                dvc =  dvc_index;
+                            },
+                            Err(_e) => {
+                                print_info(
+                                    "Device choiche went wrong. Please, retry!",
+                                    InfoType::Error,
+                                );
+                                continue 'outer;
+                            }
+                        };
+                    }
+                    _ => {
+                        print_info("Input does not recognized. Please, retry!", InfoType::Error);
+                        break 'outer;
+                    }
+                };
+            }
+        };
+
+        'inner: loop {
+            //Choise n.2 - Time interval
+            println!(
+                "\n>Type the time interval(secs) after which you want a new reportor,{} or {} to restart, {} or {} to exit:",
+                "restart".green(),
+                "r".green(),
+                "quit".red(),
+                "q".red(),
+            );
+
+            //Choice n.2 - Reading input
+            input.clear();
+            io::stdin().read_line(&mut input).unwrap();
+
+            //Choice n.2 - Clearing input
+            new_input = input.trim().split_whitespace();
+            command = new_input.next().unwrap();
+
+            //Choise n.2 - Matching input
+            match command {
+                "q" | "quit" => {
+                    println!("Quitting...");
+                    return;
+                },
+                "r" | "restart" => {
+                    println!("Restarting...");
+                    continue 'outer;
+                },
+                comm => {
+                    match set_time_interval(comm) {
+                        Ok(time_interval) => {
+                            report_interval = time_interval;
+                            break 'outer;
+                        },
+                        Err(_e) => {
+                            print_info(
+                                "Time seems not to be correct. Please, retry!",
+                                InfoType::Error,
+                            );
+                            continue 'inner;
+                        }
+                    };
+                }
+            }
+        }
+    }
+    //let tx = tx.clone();
+    capture(dvc, tx, rx);
+}
+
+fn set_device() -> Result<String, ReadUserInputError> {
+
     //get devices list
     let devices_list = Device::list().unwrap();
     let mut counter: usize = 0;
@@ -238,43 +376,44 @@ fn main() {
                 println!("{}) {} - No description available", counter, &device.name);
             }
         }
-
         counter += 1;
     }
 
-    //user input
     let mut device_to_monitor = String::new();
-    let mut dvc = String::new();
+    //Device settings
+    println!(">Type the number of the device you want to monitor");
+    device_to_monitor.clear();
+    std::io::stdin().read_line(&mut device_to_monitor)?;
+    //Clear input
+    let mut new_input = device_to_monitor.trim().split_whitespace();
+    let command = new_input.next().unwrap();
 
-    'outer: loop {
-        println!(
-            "\nType the number of the device you want to monitor or {} to exit:",
-            "quit".red()
-        );
-        device_to_monitor.clear();
-        std::io::stdin().read_line(&mut device_to_monitor).unwrap();
-
-        device_to_monitor = device_to_monitor.replace(LINE_ENDING, "");
-
-        match device_to_monitor.as_str() {
-            "quit" => {
-                println!("Quitting...");
-                return;
+    match command.parse::<i32>() {
+        Ok(val) => {
+            if val <= 0 || val >= counter.try_into().unwrap() {
+                return Err(ReadUserInputError::AbsentDevice)
+            } else {
+                return Ok(String::from(&devices_list.get(val as usize).unwrap().name))
             }
-            _ => match device_to_monitor.parse::<i32>() {
-                Ok(val) => {
-                    if val >= 0 {
-                        dvc = String::from(&devices_list.get(val as usize).unwrap().name);
-                        break 'outer;
-                    }
-                }
-                Err(e) => {}
-            },
-        }
-
-        println!("{}", "\nInvalid input! Retry...\n".red());
+        },
+        Err(e) => return Err(ReadUserInputError::InvalidInteger(e))
     }
+}
 
-    //let tx = tx.clone();
-    capture(dvc, tx, rx);
+fn set_time_interval (time_interval : &str) -> Result<Duration,ReadUserInputError> {
+    //Parse time interval from string to u64
+    match time_interval.parse::<u64>() {
+        Ok(value) => match value {
+            0..=29 => {
+                return Err(ReadUserInputError::TimeIntervalMinExceeded)
+            }
+            3600..=std::u64::MAX => {
+                return Err(ReadUserInputError::TimeIntervalMaxExceeded)
+            }
+            _ => {
+                return Ok(Duration::new(value, 0))
+            }
+        },
+        Err(e) => return Err(ReadUserInputError::InvalidInteger(e)),
+    }
 }
