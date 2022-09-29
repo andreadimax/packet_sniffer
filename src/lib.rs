@@ -106,7 +106,7 @@ pub mod packet {
 
     impl Display for PacketInfo {
         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-            write!(f, "{} | {} | {} | {} | {} | {} | {} | {} | {:?} | {} | {}", self.get_id(),
+            write!(f, "{:<2} | {} | {} | {} | {} | {} | {} | {} | {:?} | {} | {}", self.get_id(),
                                                                             self.get_mac_src().or(Some("")).unwrap(),
                                                                             self.get_mac_dst().or(Some("")).unwrap(),
                                                                         self.get_ip_src().or(Some("")).unwrap(),

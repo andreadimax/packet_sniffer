@@ -43,7 +43,7 @@ fn capture(dvc: String, tx: SyncSender<Message>, rx: Receiver<Message>) {
     use packet_sniffer::protocols::parse_packet;
 
     println!("\n ---- Capturing on device {} ---- \n", dvc.green());
-    println!("\nType {} if you want to pause..\n", "stop".yellow());
+
 
     /*
         2 threads activated:
@@ -53,6 +53,33 @@ fn capture(dvc: String, tx: SyncSender<Message>, rx: Receiver<Message>) {
     */
     let (send, rec) = sync_channel(1);
     let mut pause = false;
+    let mut filter = String::new();
+
+    let mut cap;
+
+    loop {
+        println!("Type a filter if you want to apply it or press {}", "enter".yellow());
+        std::io::stdin().read_line(&mut filter).unwrap();
+        let mut filter = filter.trim();
+        cap = pcap::Capture::from_device(dvc.as_str())
+            .unwrap()
+            .immediate_mode(true)
+            .open().unwrap();
+        if filter.is_empty() ==false {
+            match cap.filter(&filter, false) {
+                Ok(()) => { break }
+                Err(e) => {
+                    filter.clear();
+                    print_info(
+                        "Error in filter syntax",
+                        InfoType::Error,
+                    );
+                }
+            }
+        }else {break;}
+    }
+    println!("\nType {} if you want to pause..\n", "stop".yellow());
+
 
     //user input thread
     let _t2 = thread::spawn(move || loop {
@@ -63,15 +90,12 @@ fn capture(dvc: String, tx: SyncSender<Message>, rx: Receiver<Message>) {
 
     //capture thread
     let t1 = thread::spawn(move || {
-        match pcap::Capture::from_device(dvc.as_str())
-            .unwrap()
-            .immediate_mode(true)
-            .open()
-        {
+
+        let mut cap = cap.setnonblock();
+        match cap {
             Ok(mut cap) => {
                 //Avoid blocking capture thread if no packet incoming..
                 //Like using try_recv with channels
-                cap = cap.setnonblock().unwrap();
 
                 let cap = Arc::new(Mutex::new(cap));
 
@@ -137,8 +161,15 @@ fn capture(dvc: String, tx: SyncSender<Message>, rx: Receiver<Message>) {
                         }
                     }
 
+
+                   // cap.filter(&filter,false);
+
                     let mut capp = cap.lock().unwrap();
+
+
                     let packet = capp.next();
+
+
 
                     //unfortunately Capture object does not support pause
                     //if we are in pause state we have to ignore packets
@@ -221,6 +252,7 @@ fn main() {
     let devices_list = Device::list().unwrap();
     let mut counter: usize = 0;
 
+
     //printing devices list
     println!("\nAvailable devices:\n");
 
@@ -245,6 +277,7 @@ fn main() {
     //user input
     let mut device_to_monitor = String::new();
     let mut dvc = String::new();
+
 
     'outer: loop {
         println!(
@@ -276,5 +309,10 @@ fn main() {
     }
 
     //let tx = tx.clone();
-    capture(dvc, tx, rx);
+
+
+
+
+        capture(dvc, tx, rx);
+
 }
