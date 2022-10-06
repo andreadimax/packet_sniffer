@@ -1,4 +1,5 @@
 use colored::*;
+use packet_sniffer::connection::Connection;
 use pcap::{Device, Packet, PacketHeader};
 use signal_hook::SigId;
 use std::error::Error;
@@ -6,6 +7,7 @@ use std::fmt::Display;
 use std::io::{self, stdout, Write};
 use std::iter::Enumerate;
 use std::num::ParseIntError;
+use std::sync::mpsc;
 use std::sync::mpsc::{sync_channel, Receiver, RecvError, SyncSender, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -61,7 +63,6 @@ impl Display for ReadUserInputError {
     }
 }
 
-
 fn print_info(info: &str, info_type: InfoType) {
     match info_type {
         InfoType::Data => {
@@ -76,7 +77,7 @@ fn print_info(info: &str, info_type: InfoType) {
     }
 }
 
-fn capture(dvc: String, tx: SyncSender<Message>, rx: Receiver<Message>) {
+fn capture(dvc: String, tir: Duration, tx: SyncSender<Message>, rx: Receiver<Message>) {
     use packet_sniffer::packet::PacketInfo;
     use packet_sniffer::protocols::parse_packet;
 
@@ -98,6 +99,11 @@ fn capture(dvc: String, tx: SyncSender<Message>, rx: Receiver<Message>) {
         std::io::stdin().read_line(&mut buffer).unwrap();
         send.send(buffer).unwrap();
     });
+
+    /*
+        A channel to communicate between parser_thread & report_thread
+    */
+    let (parser_tx, report_rx) = mpsc::channel();
 
     //capture thread
     let t1 = thread::spawn(move || {
@@ -232,6 +238,8 @@ fn capture(dvc: String, tx: SyncSender<Message>, rx: Receiver<Message>) {
                             }
                             None => {
                                 print_info(&packet.to_string(), InfoType::Data);
+                                //Send packets to report thread
+                                parser_tx.send(packet).unwrap();
                             }
                         },
                         _ => {
@@ -247,6 +255,22 @@ fn capture(dvc: String, tx: SyncSender<Message>, rx: Receiver<Message>) {
         }
     });
 
+    let report_thread = thread::spawn(move || {
+        loop {
+            //Thread may sleep longer than time interval -> Another solution is required
+            thread::sleep(tir);
+            println!("Report thread after sleep");
+            //Collect all packets sent
+            let packets: Vec<PacketInfo> = report_rx.iter().collect();
+            //Gen PDF
+            match Connection::get_report(&packets){
+                Ok(_) => print_info("Report generation completed!", InfoType::Info),
+                Err(_) => print_info("Error during report generation!", InfoType::Error),
+            }
+        }
+    });
+
+    report_thread.join().unwrap();
     t1.join().unwrap();
     parser_thread.join().unwrap();
 }
@@ -284,8 +308,8 @@ fn main() {
                     "devices" | "d" => {
                         match set_device() {
                             Ok(dvc_index) => {
-                                dvc =  dvc_index;
-                            },
+                                dvc = dvc_index;
+                            }
                             Err(_e) => {
                                 print_info(
                                     "Device choiche went wrong. Please, retry!",
@@ -326,17 +350,17 @@ fn main() {
                 "q" | "quit" => {
                     println!("Quitting...");
                     return;
-                },
+                }
                 "r" | "restart" => {
                     println!("Restarting...");
                     continue 'outer;
-                },
+                }
                 comm => {
                     match set_time_interval(comm) {
                         Ok(time_interval) => {
                             report_interval = time_interval;
                             break 'outer;
-                        },
+                        }
                         Err(_e) => {
                             print_info(
                                 "Time seems not to be correct. Please, retry!",
@@ -350,11 +374,10 @@ fn main() {
         }
     }
     //let tx = tx.clone();
-    capture(dvc, tx, rx);
+    capture(dvc, report_interval, tx, rx);
 }
 
 fn set_device() -> Result<String, ReadUserInputError> {
-
     //get devices list
     let devices_list = Device::list().unwrap();
     let mut counter: usize = 0;
@@ -391,28 +414,22 @@ fn set_device() -> Result<String, ReadUserInputError> {
     match command.parse::<i32>() {
         Ok(val) => {
             if val <= 0 || val >= counter.try_into().unwrap() {
-                return Err(ReadUserInputError::AbsentDevice)
+                return Err(ReadUserInputError::AbsentDevice);
             } else {
-                return Ok(String::from(&devices_list.get(val as usize).unwrap().name))
+                return Ok(String::from(&devices_list.get(val as usize).unwrap().name));
             }
-        },
-        Err(e) => return Err(ReadUserInputError::InvalidInteger(e))
+        }
+        Err(e) => return Err(ReadUserInputError::InvalidInteger(e)),
     }
 }
 
-fn set_time_interval (time_interval : &str) -> Result<Duration,ReadUserInputError> {
+fn set_time_interval(time_interval: &str) -> Result<Duration, ReadUserInputError> {
     //Parse time interval from string to u64
     match time_interval.parse::<u64>() {
         Ok(value) => match value {
-            0..=29 => {
-                return Err(ReadUserInputError::TimeIntervalMinExceeded)
-            }
-            3600..=std::u64::MAX => {
-                return Err(ReadUserInputError::TimeIntervalMaxExceeded)
-            }
-            _ => {
-                return Ok(Duration::new(value, 0))
-            }
+            0..=29 => return Err(ReadUserInputError::TimeIntervalMinExceeded),
+            3600..=std::u64::MAX => return Err(ReadUserInputError::TimeIntervalMaxExceeded),
+            _ => return Ok(Duration::new(value, 0)),
         },
         Err(e) => return Err(ReadUserInputError::InvalidInteger(e)),
     }
