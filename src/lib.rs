@@ -86,6 +86,35 @@ impl Display for ParsingError {
 
 impl Error for ParsingError {}
 
+
+
+#[derive(Debug)]
+pub enum GenPdfError {
+    GenericError(String),
+    OldReportFileOpened,
+    NoConnections
+}
+
+impl Display for GenPdfError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::GenericError(error) => {
+                write!(f, "Generic Error: {}", error)
+            }
+            Self::OldReportFileOpened => {
+                write!(f, "Impossible generate a new report while the old one is opened. Please, close it!")
+            }
+            Self::NoConnections => {
+                write!(f, "Impossible generate a report with no connections!")
+            }
+        }
+    }
+}
+
+impl Error for GenPdfError {}
+
+
+
 pub mod packet {
     use std::fmt::{Display, Formatter};
 
@@ -778,8 +807,9 @@ pub mod protocols {
 
 //MB
 pub mod connection {
-    use crate::{packet::PacketInfo, protocols::Protocols};
 
+    use crate::GenPdfError;
+    use crate::{packet::PacketInfo, protocols::Protocols};
     use genpdf::Alignment;
     use genpdf::Element as _;
     use genpdf::{elements, fonts, style};
@@ -790,7 +820,10 @@ pub mod connection {
     ];
     const DEFAULT_FONT_NAME: &'static str = "Roboto";
     //const MONO_FONT_NAME: &'static str = "LiberationMono";
-    
+    const RED : style::Color = style::Color::Rgb(255, 0, 0);
+    const BLUE :style::Color = style::Color::Rgb(0, 0, 255);
+
+
     pub struct Connection {
         id: usize,
         ip_src: String,
@@ -881,7 +914,7 @@ pub mod connection {
             let bytes_exchanged :usize = connection.iter().map(|p| p.get_length()).sum();
             //Get initial and final timestamp
             let initial_timestamp :f64 = connection.iter().map(|p| p.get_timestamp()).fold(f64::INFINITY, |a, b| a.min(b));
-            let final_timestamp :f64 = connection.iter().map(|p| p.get_timestamp()).fold(f64::INFINITY, |a, b| a.max(b));
+            let final_timestamp :f64 = connection.iter().map(|p| p.get_timestamp()).fold(f64::NEG_INFINITY, |a, b| a.max(b));
 
             Ok(
                 Connection{
@@ -903,6 +936,7 @@ pub mod connection {
         pub fn get_connections(packets: &[PacketInfo]) -> Option<Vec<Connection>>{
             let mut filtered_packets = packets.to_vec();
             let mut connections: Vec<Connection> = Vec::new();
+            let mut counterId: usize = 1;
 
             //Loop
             loop {
@@ -919,7 +953,7 @@ pub mod connection {
                 let current_port_dst = first_item.get_port_dst().unwrap();
 
                 let connection = Connection::from_networks(
-                    1,
+                    counterId,
                     current_ip_src.to_string(),
                     current_ip_dst.to_string(),
                     current_port_src,
@@ -937,9 +971,9 @@ pub mod connection {
                     p.get_ip_dst().unwrap() == current_ip_dst &&
                     p.get_port_src().unwrap() == current_port_src &&
                     p.get_port_dst().unwrap() == current_port_dst   
-                )
-                )
+                ));
                 //Restart the loop
+                counterId += 1;
             }
     
             if connections.is_empty() {
@@ -950,7 +984,7 @@ pub mod connection {
     
         }
 
-        pub fn get_report(packets: &[PacketInfo]) -> Result<(),Error>{
+        pub fn get_report(packets: &[PacketInfo]) -> Result<(),GenPdfError>{
             println!("Get_Report");
 
             //Remove None Elements
@@ -989,15 +1023,18 @@ pub mod connection {
 
                     //TITLE
                     doc.push(
-                        genpdf::elements::Paragraph::new("PacketSniffer Report n.")
+                        genpdf::elements::Paragraph::new("PacketSniffer Report")
                         .aligned(Alignment::Left)
-                        .styled(style::Style::new().bold().with_font_size(20).with_color(style::Color::Rgb(0, 0, 255)))
+                        .styled(style::Style::new().bold().with_font_size(20).with_color(RED))
+                    );
+                    doc.push(
+                        genpdf::elements::Paragraph::new("")
                     );
                     //PARAGRAPH 1 - All Packet Info
                     doc.push(
                         genpdf::elements::Paragraph::new("All packets:")
                         .aligned(Alignment::Left)
-                        .styled(style::Style::new().italic().with_font_size(15))
+                        .styled(style::Style::new().italic().with_font_size(15).with_color(BLUE))
                     );
                     doc.push(
                         genpdf::elements::Paragraph::new("")
@@ -1024,8 +1061,8 @@ pub mod connection {
                             .row()
                             .element(elements::Paragraph::new(format!("{}", packet.get_id()))
                                 .aligned(Alignment::Left)
-                                .styled(style::Style::new().with_font_size(5))
-                                .padded(2)
+                                .styled(style::Style::new().with_font_size(4))
+                                .padded(1)
                             )
                             .element(elements::Paragraph::new(format!("{}", packet.get_ip_src().unwrap()))
                                 .aligned(Alignment::Left)
@@ -1089,13 +1126,13 @@ pub mod connection {
                     doc.push(
                         genpdf::elements::Paragraph::new("All connections:")
                         .aligned(Alignment::Left)
-                        .styled(style::Style::new().italic().with_font_size(15))
+                        .styled(style::Style::new().italic().with_font_size(15).with_color(BLUE))
                     );
                     doc.push(
                         genpdf::elements::Paragraph::new("")
                     );
 
-                    let mut table2 = elements::TableLayout::new(vec![1, 3, 3, 2, 2, 1, 2, 3, 3]);
+                    let mut table2 = elements::TableLayout::new(vec![1, 3, 3, 2, 2, 2, 2, 3, 3]);
                     table2.set_cell_decorator(elements::FrameCellDecorator::new(true, true, false));
                     let mut row2 = table2.row();
                     row2.push_element(elements::Paragraph::new("Id").styled(style::Style::new().bold().with_font_size(8)).padded(2));
@@ -1105,8 +1142,8 @@ pub mod connection {
                     row2.push_element(elements::Paragraph::new("P.Dst").styled(style::Style::new().bold().with_font_size(8)).padded(2));
                     row2.push_element(elements::Paragraph::new("Prot.").styled(style::Style::new().bold().with_font_size(8)).padded(2));
                     row2.push_element(elements::Paragraph::new("TOT Len").styled(style::Style::new().bold().with_font_size(8)).padded(2));
-                    row2.push_element(elements::Paragraph::new("Initial Timestamp").styled(style::Style::new().bold().with_font_size(8)).padded(2));
-                    row2.push_element(elements::Paragraph::new("Final Timestamp").styled(style::Style::new().bold().with_font_size(8)).padded(2));
+                    row2.push_element(elements::Paragraph::new("I. Timestamp").styled(style::Style::new().bold().with_font_size(8)).padded(2));
+                    row2.push_element(elements::Paragraph::new("F. Timestamp").styled(style::Style::new().bold().with_font_size(8)).padded(2));
                     row2.push().expect("Invalid table row");
 
                     for current_connection in c {
@@ -1163,11 +1200,12 @@ pub mod connection {
                     doc.push(table2);
 
                     // Render the document and write it to a file
-                    doc.render_to_file("output.pdf").expect("Failed to write PDF file");
-
-                    return Ok(());
+                    match doc.render_to_file("output.pdf"){
+                        Ok(_) => return Ok(()),
+                        Err(e) => return Err(GenPdfError::OldReportFileOpened),
+                    }
                 },
-                None => return Err(Error::TimeoutExpired)
+                None => return Err(GenPdfError::NoConnections)
             }
             
         }

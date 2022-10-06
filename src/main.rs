@@ -255,22 +255,35 @@ fn capture(dvc: String, tir: Duration, tx: SyncSender<Message>, rx: Receiver<Mes
         }
     });
 
+    
     let report_thread = thread::spawn(move || {
+    //At the moment, it is not possible to read from the old pdf in order to retrieve old informations, 
+    //so, we must keep old packets to be able to collect info about them in new iterations
+        let mut packets :Vec<PacketInfo> = Vec::new();
         loop {
             //Thread may sleep longer than time interval -> Another solution is required
             thread::sleep(tir);
-            println!("Report thread after sleep");
-            //Collect all packets sent
-            let packets: Vec<PacketInfo> = report_rx.iter().collect();
-            //Gen PDF
+            //Collect all packets sent -> Try_iter does not block the thread waiting other packets
+            let mut new_packets : Vec<PacketInfo> = report_rx.try_iter().collect();
+            //Check at least one new packet is available otherwise we can avoid to gen a new report 
+            //(The program is probably paused)
+            if new_packets.is_empty() {
+                continue;
+            }
+            //NEW PACKETS AVAILABLE
+            packets.append(&mut new_packets);
+            //GENERATE PDF
             match Connection::get_report(&packets){
                 Ok(_) => print_info("Report generation completed!", InfoType::Info),
-                Err(_) => print_info("Error during report generation!", InfoType::Error),
+                Err(e) => print_info(
+                    &(format!("{}", &e.to_string())),
+                    InfoType::Error,
+                ),
             }
         }
     });
 
-    report_thread.join().unwrap();
+    //report_thread.join().unwrap();
     t1.join().unwrap();
     parser_thread.join().unwrap();
 }
