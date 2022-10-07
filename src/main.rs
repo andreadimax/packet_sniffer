@@ -92,6 +92,44 @@ fn capture(
     use packet_sniffer::protocols::parse_packet;
 
     println!("\n ---- Capturing on device {} ---- \n", dvc.green());
+
+    //FILTRO
+    let mut filter = String::new();
+
+    let mut cap;
+
+    loop {
+        println!(
+            "Type a filter if you want to apply it, press {} to start capturing or type {}/{} to exit:",
+            "enter".green(),
+            "quit".red(),
+            "q".red()
+        );
+        println!("[The expression consists of one or more primitives. Primitives usually consist of an id (name or number) preceded by one or more qualifiers. \nThere are three different kinds of qualifier:\n-Type:  E.g., `host foo', `net 128.3', `port 20', `portrange 6000-6008'\n-Dir: E.g., `src foo', `dst net 128.3', `src or dst port ftp-data'\n-Proto: E.g., `ether src foo', `arp net 128.3', `tcp port 21', `udp portrange 7000-7009'.\nVisit {} for more]", "https://biot.com/capstats/bpf.html".blue());
+        std::io::stdin().read_line(&mut filter).unwrap();
+        let filter = filter.trim();
+        cap = pcap::Capture::from_device(dvc.as_str())
+            .unwrap()
+            .immediate_mode(true)
+            .open()
+            .unwrap();
+        if filter.is_empty() == false {
+            match cap.filter(&filter, false) {
+                Ok(()) => {
+                    break;
+                }
+                Err(_e) => match filter {
+                    "quit" | "q" => return,
+                    _ => {
+                        filter.clear();
+                        print_info("Error in filter syntax", InfoType::Error);
+                    }
+                },
+            }
+        } else {
+            break;
+        }
+    }
     println!("\nType {} if you want to pause..\n", "stop".yellow());
 
     /*
@@ -118,102 +156,105 @@ fn capture(
 
     //capture thread
     let t1 = thread::spawn(move || {
-        match pcap::Capture::from_device(dvc.as_str())
-            .unwrap()
-            .immediate_mode(true)
-            .open()
         {
-            Ok(mut cap) => {
-                //Avoid blocking capture thread if no packet incoming..
-                //Like using try_recv with channels
-                cap = cap.setnonblock().unwrap();
+            let mut cap = cap.setnonblock();
+            match cap {
+                Ok(mut cap) => {
+                    //Avoid blocking capture thread if no packet incoming..
+                    //Like using try_recv with channels
+                    cap = cap.setnonblock().unwrap();
 
-                let cap = Arc::new(Mutex::new(cap));
+                    let cap = Arc::new(Mutex::new(cap));
 
-                tx.send(Message::Device(dvc)).unwrap();
-                loop {
-                    //check if there's a new input from user
+                    tx.send(Message::Device(dvc)).unwrap();
+                    loop {
+                        //check if there's a new input from user
 
-                    if pause == false {
-                        match rec.try_recv() {
-                            Ok(key) => {
-                                let command = key.trim();
-                                match command {
-                                    "stop" => {
-                                        print_info(
-                                            "Capture stopped. Type 'resume' to restart.",
-                                            InfoType::Info,
-                                        );
-                                        pause = true;
-                                        tx.send(Message::Command(String::from(command))).unwrap();
+                        if pause == false {
+                            match rec.try_recv() {
+                                Ok(key) => {
+                                    let command = key.trim();
+                                    match command {
+                                        "stop" => {
+                                            print_info(
+                                                "Capture stopped. Type 'resume' to restart.",
+                                                InfoType::Info,
+                                            );
+                                            pause = true;
+                                            tx.send(Message::Command(String::from(command)))
+                                                .unwrap();
+                                        }
+                                        "resume" => {
+                                            print_info("Capture resumed", InfoType::Info);
+                                            pause = false;
+                                            tx.send(Message::Command(String::from(command)))
+                                                .unwrap();
+                                        }
+                                        "quit" => {
+                                            println!("Quitting...");
+                                            break;
+                                        }
+                                        _ => println!("Wrong command"),
                                     }
-                                    "resume" => {
-                                        print_info("Capture resumed", InfoType::Info);
-                                        pause = false;
-                                        tx.send(Message::Command(String::from(command))).unwrap();
-                                    }
-                                    "quit" => {
-                                        println!("Quitting...");
-                                        break;
-                                    }
-                                    _ => println!("Wrong command"),
                                 }
+                                Err(TryRecvError::Empty) => (),
+                                Err(TryRecvError::Disconnected) => panic!("Channel disconnected"),
                             }
-                            Err(TryRecvError::Empty) => (),
-                            Err(TryRecvError::Disconnected) => panic!("Channel disconnected"),
-                        }
-                    } else {
-                        match rec.try_recv() {
-                            Ok(key) => {
-                                let command = key.trim();
-                                match command {
-                                    "stop" => {
-                                        print_info(
-                                            "Capture stopped. Type 'resume' to restart.",
-                                            InfoType::Info,
-                                        );
-                                        pause = true;
-                                        tx.send(Message::Command(String::from(command))).unwrap();
+                        } else {
+                            match rec.try_recv() {
+                                Ok(key) => {
+                                    let command = key.trim();
+                                    match command {
+                                        "stop" => {
+                                            print_info(
+                                                "Capture stopped. Type 'resume' to restart.",
+                                                InfoType::Info,
+                                            );
+                                            pause = true;
+                                            tx.send(Message::Command(String::from(command)))
+                                                .unwrap();
+                                        }
+                                        "resume" => {
+                                            print_info("Capture resumed", InfoType::Info);
+                                            pause = false;
+                                            tx.send(Message::Command(String::from(command)))
+                                                .unwrap();
+                                        }
+                                        "quit" => {
+                                            println!("Quitting...");
+                                            break;
+                                        }
+                                        _ => println!("Wrong command"),
                                     }
-                                    "resume" => {
-                                        print_info("Capture resumed", InfoType::Info);
-                                        pause = false;
-                                        tx.send(Message::Command(String::from(command))).unwrap();
-                                    }
-                                    "quit" => {
-                                        println!("Quitting...");
-                                        break;
-                                    }
-                                    _ => println!("Wrong command"),
                                 }
+                                Err(TryRecvError::Empty) => (),
+                                Err(TryRecvError::Disconnected) => panic!("Channel disconnected"),
                             }
-                            Err(TryRecvError::Empty) => (),
-                            Err(TryRecvError::Disconnected) => panic!("Channel disconnected"),
                         }
-                    }
 
-                    let mut capp = cap.lock().unwrap();
-                    let packet = capp.next();
+                        let mut capp = cap.lock().unwrap();
+                        let packet = capp.next();
 
-                    //unfortunately Capture object does not support pause
-                    //if we are in pause state we have to ignore packets
-                    //but thread still runs...
-                    if pause == false {
-                        match packet {
-                            Ok(packet) => {
-                                tx.send(Message::PacketHeader(*packet.header)).unwrap();
-                                tx.send(Message::Packet(packet.to_vec())).unwrap();
+                        //unfortunately Capture object does not support pause
+                        //if we are in pause state we have to ignore packets
+                        //but thread still runs...
+                        if pause == false {
+                            match packet {
+                                Ok(packet) => {
+                                    tx.send(Message::PacketHeader(*packet.header)).unwrap();
+                                    tx.send(Message::Packet(packet.to_vec())).unwrap();
+                                }
+                                Err(_) => {}
                             }
-                            Err(_) => {}
                         }
                     }
                 }
-            }
-            Err(e) => {
-                println!(
-                    "Error : {} on opening choosen interface. Quitting...",
-                    e.to_string().red()
-                )
+                Err(e) => {
+                    println!(
+                        "Error : {} on opening choosen interface. Quitting...",
+                        e.to_string().red()
+                    )
+                }
             }
         }
     });
@@ -327,23 +368,21 @@ fn main() {
             }
             comm => {
                 match comm {
-                    "devices" | "d" => {
-                        loop {
-                            match set_device() {
-                                Ok(dvc_index) => {
-                                    dvc = dvc_index;
-                                    break;
-                                }
-                                Err(_e) => {
-                                    print_info(
-                                        "Device choiche went wrong. Please, retry!",
-                                        InfoType::Error,
-                                    );
-                                    continue;
-                                }
-                            };
-                        }
-                    }
+                    "devices" | "d" => loop {
+                        match set_device() {
+                            Ok(dvc_index) => {
+                                dvc = dvc_index;
+                                break;
+                            }
+                            Err(_e) => {
+                                print_info(
+                                    "Device choiche went wrong. Please, retry!",
+                                    InfoType::Error,
+                                );
+                                continue;
+                            }
+                        };
+                    },
                     _ => {
                         print_info("Input does not recognized. Please, retry!", InfoType::Error);
                         continue 'outer;
@@ -503,7 +542,7 @@ fn set_time_interval(time_interval: &str) -> Result<Duration, ReadUserInputError
     }
 }
 
-fn set_report_path(path: &str) -> Result< String, ReadUserInputError> {
+fn set_report_path(path: &str) -> Result<String, ReadUserInputError> {
     //Check default case
     if path.trim().is_empty() {
         return Ok(path.to_string());
