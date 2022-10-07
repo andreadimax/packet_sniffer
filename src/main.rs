@@ -3,10 +3,12 @@ use packet_sniffer::connection::Connection;
 use pcap::{Device, Packet, PacketHeader};
 use signal_hook::SigId;
 use std::error::Error;
+use std::ffi::OsStr;
 use std::fmt::Display;
 use std::io::{self, stdout, Write};
 use std::iter::Enumerate;
 use std::num::ParseIntError;
+use std::path::Path;
 use std::sync::mpsc;
 use std::sync::mpsc::{sync_channel, Receiver, RecvError, SyncSender, TryRecvError};
 use std::sync::{Arc, Mutex};
@@ -38,6 +40,7 @@ enum ReadUserInputError {
     TimeIntervalMaxExceeded,
     TimeIntervalMinExceeded,
     AbsentDevice,
+    ReportPathError,
 }
 impl From<io::Error> for ReadUserInputError {
     fn from(e: io::Error) -> Self {
@@ -59,6 +62,7 @@ impl Display for ReadUserInputError {
             ReadUserInputError::AbsentDevice => write!(f, "There is not device for entered input"),
             ReadUserInputError::TimeIntervalMaxExceeded => write!(f, "Time interlval too big"),
             ReadUserInputError::TimeIntervalMinExceeded => write!(f, "Time interval too short"),
+            ReadUserInputError::ReportPathError => write!(f, "Report path does not exist!"),
         }
     }
 }
@@ -77,7 +81,13 @@ fn print_info(info: &str, info_type: InfoType) {
     }
 }
 
-fn capture(dvc: String, tir: Duration, tx: SyncSender<Message>, rx: Receiver<Message>) {
+fn capture(
+    dvc: String,
+    tir: Duration,
+    report_path: &str,
+    tx: SyncSender<Message>,
+    rx: Receiver<Message>,
+) {
     use packet_sniffer::packet::PacketInfo;
     use packet_sniffer::protocols::parse_packet;
 
@@ -92,6 +102,7 @@ fn capture(dvc: String, tir: Duration, tx: SyncSender<Message>, rx: Receiver<Mes
     */
     let (send, rec) = sync_channel(1);
     let mut pause = false;
+    let path = report_path.to_string();
 
     //user input thread
     let _t2 = thread::spawn(move || loop {
@@ -255,17 +266,16 @@ fn capture(dvc: String, tir: Duration, tx: SyncSender<Message>, rx: Receiver<Mes
         }
     });
 
-    
-    let report_thread = thread::spawn(move || {
-    //At the moment, it is not possible to read from the old pdf in order to retrieve old informations, 
-    //so, we must keep old packets to be able to collect info about them in new iterations
-        let mut packets :Vec<PacketInfo> = Vec::new();
+    let _report_thread = thread::spawn(move || {
+        //At the moment, it is not possible to read from the old pdf in order to retrieve old informations,
+        //so, we must keep old packets to be able to collect info about them in new iterations
+        let mut packets: Vec<PacketInfo> = Vec::new();
         loop {
             //Thread may sleep longer than time interval -> Another solution is required
             thread::sleep(tir);
             //Collect all packets sent -> Try_iter does not block the thread waiting other packets
-            let mut new_packets : Vec<PacketInfo> = report_rx.try_iter().collect();
-            //Check at least one new packet is available otherwise we can avoid to gen a new report 
+            let mut new_packets: Vec<PacketInfo> = report_rx.try_iter().collect();
+            //Check at least one new packet is available otherwise we can avoid to gen a new report
             //(The program is probably paused)
             if new_packets.is_empty() {
                 continue;
@@ -273,12 +283,9 @@ fn capture(dvc: String, tir: Duration, tx: SyncSender<Message>, rx: Receiver<Mes
             //NEW PACKETS AVAILABLE
             packets.append(&mut new_packets);
             //GENERATE PDF
-            match Connection::get_report(&packets){
+            match Connection::get_report(&packets, &path) {
                 Ok(_) => print_info("Report generation completed!", InfoType::Info),
-                Err(e) => print_info(
-                    &(format!("{}", &e.to_string())),
-                    InfoType::Error,
-                ),
+                Err(e) => print_info(&(format!("{}", &e.to_string())), InfoType::Error),
             }
         }
     });
@@ -296,6 +303,8 @@ fn main() {
     let mut dvc = String::new();
     //ReportTime Interval - Default -> 5 secs
     let mut report_interval = Duration::new(5, 0);
+    //Path for report
+    let mut report_path = String::new();
 
     println!("> Welcome in PacketSniffer (Rust Edition) By A. Di Mauro, M.Basilico, M.L.Colangelo");
 
@@ -308,7 +317,7 @@ fn main() {
 
         //Choice n.1 - Clearing input
         let mut new_input = input.trim().split_whitespace();
-        let mut command = new_input.next().unwrap();
+        let mut command = new_input.next().unwrap_or("");
 
         //Choise n.1 - Matching input
         match command {
@@ -319,22 +328,25 @@ fn main() {
             comm => {
                 match comm {
                     "devices" | "d" => {
-                        match set_device() {
-                            Ok(dvc_index) => {
-                                dvc = dvc_index;
-                            }
-                            Err(_e) => {
-                                print_info(
-                                    "Device choiche went wrong. Please, retry!",
-                                    InfoType::Error,
-                                );
-                                continue 'outer;
-                            }
-                        };
+                        loop {
+                            match set_device() {
+                                Ok(dvc_index) => {
+                                    dvc = dvc_index;
+                                    break;
+                                }
+                                Err(_e) => {
+                                    print_info(
+                                        "Device choiche went wrong. Please, retry!",
+                                        InfoType::Error,
+                                    );
+                                    continue;
+                                }
+                            };
+                        }
                     }
                     _ => {
                         print_info("Input does not recognized. Please, retry!", InfoType::Error);
-                        break 'outer;
+                        continue 'outer;
                     }
                 };
             }
@@ -356,7 +368,7 @@ fn main() {
 
             //Choice n.2 - Clearing input
             new_input = input.trim().split_whitespace();
-            command = new_input.next().unwrap();
+            command = new_input.next().unwrap_or("");
 
             //Choise n.2 - Matching input
             match command {
@@ -372,7 +384,7 @@ fn main() {
                     match set_time_interval(comm) {
                         Ok(time_interval) => {
                             report_interval = time_interval;
-                            break 'outer;
+                            break;
                         }
                         Err(_e) => {
                             print_info(
@@ -385,9 +397,52 @@ fn main() {
                 }
             }
         }
+
+        'inner2: loop {
+            //Choise n.3 - Report Path
+            println!(
+                "\n>Type the path where you want a new report or {}/{} to restart or {}/{} to exit:\n(Do not type anything if you want use current directory)",
+                "restart".green(),
+                "r".green(),
+                "quit".red(),
+                "q".red(),
+            );
+
+            //Choice n.3 - Reading input
+            input.clear();
+            io::stdin().read_line(&mut input).unwrap();
+
+            //Choice n.3 - Clearing input
+            new_input = input.trim().split_whitespace();
+            command = new_input.next().unwrap_or("");
+
+            //Choise n.3 - Matching input
+            match command {
+                "q" | "quit" => {
+                    println!("Quitting...");
+                    return;
+                }
+                "r" | "restart" => {
+                    println!("Restarting...");
+                    continue 'outer;
+                }
+                comm => {
+                    match set_report_path(comm) {
+                        Ok(s) => {
+                            report_path = String::from(s);
+                            break 'outer;
+                        }
+                        Err(_e) => {
+                            print_info("Path does not exist. Please, retry!", InfoType::Error);
+                            continue 'inner2;
+                        }
+                    };
+                }
+            }
+        }
     }
     //let tx = tx.clone();
-    capture(dvc, report_interval, tx, rx);
+    capture(dvc, report_interval, &report_path, tx, rx);
 }
 
 fn set_device() -> Result<String, ReadUserInputError> {
@@ -422,7 +477,7 @@ fn set_device() -> Result<String, ReadUserInputError> {
     std::io::stdin().read_line(&mut device_to_monitor)?;
     //Clear input
     let mut new_input = device_to_monitor.trim().split_whitespace();
-    let command = new_input.next().unwrap();
+    let command = new_input.next().unwrap_or("");
 
     match command.parse::<i32>() {
         Ok(val) => {
@@ -445,5 +500,18 @@ fn set_time_interval(time_interval: &str) -> Result<Duration, ReadUserInputError
             _ => return Ok(Duration::new(value, 0)),
         },
         Err(e) => return Err(ReadUserInputError::InvalidInteger(e)),
+    }
+}
+
+fn set_report_path(path: &str) -> Result< String, ReadUserInputError> {
+    //Check default case
+    if path.trim().is_empty() {
+        return Ok(path.to_string());
+    }
+    //Parse time interval from string to u64
+    let new_path = Path::new(path);
+    match new_path.is_dir() {
+        true => return Ok(path.to_string()),
+        false => return Err(ReadUserInputError::ReportPathError),
     }
 }

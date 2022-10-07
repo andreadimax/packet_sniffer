@@ -808,6 +808,8 @@ pub mod protocols {
 //MB
 pub mod connection {
 
+    use std::path::Path;
+
     use crate::GenPdfError;
     use crate::{packet::PacketInfo, protocols::Protocols};
     use genpdf::Alignment;
@@ -984,9 +986,9 @@ pub mod connection {
     
         }
 
-        pub fn get_report(packets: &[PacketInfo]) -> Result<(),GenPdfError>{
-            println!("Get_Report");
+        pub fn get_report(packets: &[PacketInfo], path: &str) -> Result<(),GenPdfError>{
 
+            let report_path = path.to_string();
             //Remove None Elements
             let mut new_packets :Vec<PacketInfo> = packets.to_vec();
             new_packets.retain(|p| !( 
@@ -1200,9 +1202,16 @@ pub mod connection {
                     doc.push(table2);
 
                     // Render the document and write it to a file
-                    match doc.render_to_file("output.pdf"){
+                    let mut final_report_path = String::new();
+                    if !report_path.is_empty() {
+                        final_report_path.push_str(&report_path);
+                        final_report_path.push(std::path::MAIN_SEPARATOR);
+                    }
+                    final_report_path.push_str("output.pdf");
+
+                    match doc.render_to_file(final_report_path){
                         Ok(_) => return Ok(()),
-                        Err(e) => return Err(GenPdfError::OldReportFileOpened),
+                        Err(_e) => return Err(GenPdfError::OldReportFileOpened),
                     }
                 },
                 None => return Err(GenPdfError::NoConnections)
