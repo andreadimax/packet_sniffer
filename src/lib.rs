@@ -526,7 +526,7 @@ pub mod protocols {
                     IcmpCode::Redirect(_) => packet_info.set_info("ICMP Redirect"),
                     IcmpCode::EchoReply => packet_info.set_info("ICMP Echo Reply"),
                     IcmpCode::EchoRequest => {
-                        println!("ok");
+                        //println!("ok");
                         packet_info.set_info("ICMP Echo Request")
                     }
                     IcmpCode::RouterAdvertisment => {
@@ -808,7 +808,8 @@ pub mod protocols {
 //MB
 pub mod connection {
 
-    use std::path::Path;
+    //use std::path::Path;
+    use chrono::prelude::*;
 
     use crate::GenPdfError;
     use crate::{packet::PacketInfo, protocols::Protocols};
@@ -988,6 +989,7 @@ pub mod connection {
 
         pub fn get_report(packets: &[PacketInfo], path: &str) -> Result<(),GenPdfError>{
 
+            let timestamp = chrono::offset::Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
             let report_path = path.to_string();
             //Remove None Elements
             let mut new_packets :Vec<PacketInfo> = packets.to_vec();
@@ -1207,7 +1209,8 @@ pub mod connection {
                         final_report_path.push_str(&report_path);
                         final_report_path.push(std::path::MAIN_SEPARATOR);
                     }
-                    final_report_path.push_str("output.pdf");
+                    let file_name = format!("output_{}.pdf", timestamp);
+                    final_report_path.push_str(&file_name);
 
                     match doc.render_to_file(final_report_path){
                         Ok(_) => return Ok(()),

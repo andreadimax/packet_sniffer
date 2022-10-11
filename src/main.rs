@@ -1,4 +1,5 @@
 use colored::*;
+use eventual::Timer;
 use packet_sniffer::connection::Connection;
 use pcap::{Device, Packet, PacketHeader};
 use signal_hook::SigId;
@@ -107,7 +108,7 @@ fn capture(
         );
         println!("[The expression consists of one or more primitives. Primitives usually consist of an id (name or number) preceded by one or more qualifiers. \nThere are three different kinds of qualifier:\n-Type:  E.g., `host foo', `net 128.3', `port 20', `portrange 6000-6008'\n-Dir: E.g., `src foo', `dst net 128.3', `src or dst port ftp-data'\n-Proto: E.g., `ether src foo', `arp net 128.3', `tcp port 21', `udp portrange 7000-7009'.\nVisit {} for more]", "https://biot.com/capstats/bpf.html".blue());
         std::io::stdin().read_line(&mut filter).unwrap();
-        let filter = filter.trim();
+        filter = filter.trim().to_string();
         cap = pcap::Capture::from_device(dvc.as_str())
             .unwrap()
             .immediate_mode(true)
@@ -118,7 +119,7 @@ fn capture(
                 Ok(()) => {
                     break;
                 }
-                Err(_e) => match filter {
+                Err(_e) => match filter.as_str() {
                     "quit" | "q" => return,
                     _ => {
                         filter.clear();
@@ -154,6 +155,17 @@ fn capture(
     */
     let (parser_tx, report_rx) = mpsc::channel();
 
+    /*
+        A channel to communicate a request to generate a report
+    */
+    let (report_notification_tx, report_notification_rx) = mpsc::channel();
+    //Define a timer to notify report thread
+    let timer = Timer::new();
+    let ticks = timer
+        .interval_ms(tir.as_millis().try_into().unwrap())
+        .iter();
+
+    let report_notification_tx2 = report_notification_tx.clone();
     //capture thread
     let t1 = thread::spawn(move || {
         {
@@ -192,6 +204,9 @@ fn capture(
                                         }
                                         "quit" => {
                                             println!("Quitting...");
+                                            report_notification_tx2.send(true).expect(
+                                                "Could not send signal on quitting channel.",
+                                            );
                                             break;
                                         }
                                         _ => println!("Wrong command"),
@@ -222,6 +237,9 @@ fn capture(
                                         }
                                         "quit" => {
                                             println!("Quitting...");
+                                            report_notification_tx2.send(true).expect(
+                                                "Could not send signal on quitting channel.",
+                                            );
                                             break;
                                         }
                                         _ => println!("Wrong command"),
@@ -289,7 +307,8 @@ fn capture(
                                 );
                             }
                             None => {
-                                print_info(&packet.to_string(), InfoType::Data);
+                                //print_info(&packet.to_string(), InfoType::Data);
+
                                 //Send packets to report thread
                                 parser_tx.send(packet).unwrap();
                             }
@@ -307,33 +326,53 @@ fn capture(
         }
     });
 
-    let _report_thread = thread::spawn(move || {
+    let report_thread = thread::spawn(move || {
         //At the moment, it is not possible to read from the old pdf in order to retrieve old informations,
         //so, we must keep old packets to be able to collect info about them in new iterations
         let mut packets: Vec<PacketInfo> = Vec::new();
+
         loop {
-            //Thread may sleep longer than time interval -> Another solution is required
-            thread::sleep(tir);
-            //Collect all packets sent -> Try_iter does not block the thread waiting other packets
-            let mut new_packets: Vec<PacketInfo> = report_rx.try_iter().collect();
-            //Check at least one new packet is available otherwise we can avoid to gen a new report
-            //(The program is probably paused)
-            if new_packets.is_empty() {
-                continue;
-            }
-            //NEW PACKETS AVAILABLE
-            packets.append(&mut new_packets);
-            //GENERATE PDF
-            match Connection::get_report(&packets, &path) {
-                Ok(_) => print_info("Report generation completed!", InfoType::Info),
-                Err(e) => print_info(&(format!("{}", &e.to_string())), InfoType::Error),
+            //Check report notification received
+            match report_notification_rx.recv() {
+                Ok(quit) => {
+                    //Collect all packets sent -> Try_iter does not block the thread waiting other packets
+                    let mut new_packets: Vec<PacketInfo> = report_rx.try_iter().collect();
+                    //Check at least one new packet is available otherwise we can avoid to gen a new report
+                    //(The program is probably paused)
+                    if new_packets.is_empty() {
+                        continue;
+                    }
+                    //NEW PACKETS AVAILABLE
+                    packets.append(&mut new_packets);
+                    //GENERATE PDF
+                    match Connection::get_report(&packets, &path) {
+                        Ok(_) => print_info("Report generation completed!", InfoType::Info),
+                        Err(e) => print_info(&(format!("{}", &e.to_string())), InfoType::Error),
+                    }
+
+                    if quit {
+                        break;
+                    }
+                }
+                Err(_) => {}
             }
         }
     });
 
-    //report_thread.join().unwrap();
+    /*
+    Main thread notify report thread any report_interval 
+    */
+    for _ in ticks {
+        match report_notification_tx.send(false){
+            Ok(_) => {},
+            Err(_) => break,
+        }
+    }
+
+    report_thread.join().unwrap();
     t1.join().unwrap();
     parser_thread.join().unwrap();
+    
 }
 
 fn main() {
@@ -534,7 +573,7 @@ fn set_time_interval(time_interval: &str) -> Result<Duration, ReadUserInputError
     //Parse time interval from string to u64
     match time_interval.parse::<u64>() {
         Ok(value) => match value {
-            0..=29 => return Err(ReadUserInputError::TimeIntervalMinExceeded),
+            0..=4 => return Err(ReadUserInputError::TimeIntervalMinExceeded),
             3600..=std::u64::MAX => return Err(ReadUserInputError::TimeIntervalMaxExceeded),
             _ => return Ok(Duration::new(value, 0)),
         },
