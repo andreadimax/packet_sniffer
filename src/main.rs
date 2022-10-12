@@ -101,12 +101,12 @@ fn capture(
 
     loop {
         println!(
-            "Type a filter if you want to apply it, press {} to start capturing or type {}/{} to exit:",
+            "Type a filter if you want to apply it, press {} to start capturing or type {}/{} to exit:\n",
             "enter".green(),
             "quit".red(),
             "q".red()
         );
-        println!("[The expression consists of one or more primitives. Primitives usually consist of an id (name or number) preceded by one or more qualifiers. \nThere are three different kinds of qualifier:\n-Type:  E.g., `host foo', `net 128.3', `port 20', `portrange 6000-6008'\n-Dir: E.g., `src foo', `dst net 128.3', `src or dst port ftp-data'\n-Proto: E.g., `ether src foo', `arp net 128.3', `tcp port 21', `udp portrange 7000-7009'.\nVisit {} for more]", "https://biot.com/capstats/bpf.html".blue());
+        println!("[The expression consists of one or more primitives. Primitives usually consist of an id (name or number) preceded by one or more qualifiers. \n\nThere are three different kinds of qualifier:\n-Type:  E.g., `host foo', `net 128.3', `port 20', `portrange 6000-6008'\n-Dir: E.g., `src foo', `dst net 128.3', `src or dst port ftp-data'\n-Proto: E.g., `ether src foo', `arp net 128.3', `tcp port 21', `udp portrange 7000-7009'.\n\nVisit {} for more]", "https://biot.com/capstats/bpf.html".blue());
         std::io::stdin().read_line(&mut filter).unwrap();
         filter = filter.trim().to_string();
         cap = pcap::Capture::from_device(dvc.as_str())
@@ -386,7 +386,7 @@ fn main() {
     //Path for report
     let mut report_path = String::new();
 
-    println!("> Welcome in PacketSniffer (Rust Edition) By A. Di Mauro, M.Basilico, M.L.Colangelo");
+    println!("\n> Welcome in PacketSniffer (Rust Edition) By A.Di Mauro, M.Basilico, M.L.Colangelo\n");
 
     'outer: loop {
         println!("> Select an option:\n-Search available devices (Type 'devices' or 'd');\n-Quit (Type 'quit' or 'q')");
@@ -433,7 +433,7 @@ fn main() {
         'inner: loop {
             //Choise n.2 - Time interval
             println!(
-                "\n>Type the time interval(secs) after which you want a new reportor,{} or {} to restart, {} or {} to exit:",
+                "\n>Type the time interval(secs) after which you want a new report (minimum 5 secs), {} or {} to restart, {} or {} to exit:",
                 "restart".green(),
                 "r".green(),
                 "quit".red(),
@@ -479,11 +479,12 @@ fn main() {
         'inner2: loop {
             //Choise n.3 - Report Path
             println!(
-                "\n>Type the path where you want a new report or {}/{} to restart or {}/{} to exit:\n(Do not type anything if you want use current directory)",
+                "\n>Type the path where you want a new report or {}/{} to restart or {}/{} to exit:\n{}",
                 "restart".green(),
                 "r".green(),
                 "quit".red(),
                 "q".red(),
+                "(Do not type anything if you want use current directory)".yellow()
             );
 
             //Choice n.3 - Reading input
@@ -559,7 +560,7 @@ fn set_device() -> Result<String, ReadUserInputError> {
 
     match command.parse::<i32>() {
         Ok(val) => {
-            if val <= 0 || val >= counter.try_into().unwrap() {
+            if val < 0 || val >= counter.try_into().unwrap() {
                 return Err(ReadUserInputError::AbsentDevice);
             } else {
                 return Ok(String::from(&devices_list.get(val as usize).unwrap().name));
