@@ -337,6 +337,9 @@ fn capture(
             //Check report notification received
             match report_notification_rx.recv() {
                 Ok(quit) => {
+                    if quit {
+                        break;
+                    }
                     //Collect all packets sent -> Try_iter does not block the thread waiting other packets
                     let mut new_packets: Vec<PacketInfo> = report_rx.try_iter().collect();
                     //Check at least one new packet is available otherwise we can avoid to gen a new report
@@ -352,9 +355,6 @@ fn capture(
                         Err(e) => print_info(&(format!("{}", &e.to_string())), InfoType::Error),
                     }
 
-                    if quit {
-                        break;
-                    }
                 }
                 Err(_) => {}
             }
