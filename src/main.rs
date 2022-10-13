@@ -494,7 +494,7 @@ fn main() {
         'inner2: loop {
             //Choise n.3 - Report Path
             println!(
-                "\n>Type the path where you want a new report or {}/{} to restart or {}/{} to exit:\n(Do not type anything if you want use current directory, ./ to start from current position in Windows)",
+                "\n>Type the path where you want a new report or {}/{} to restart or {}/{} to exit:\n{}",
                 "restart".green(),
                 "r".green(),
                 "quit".red(),
