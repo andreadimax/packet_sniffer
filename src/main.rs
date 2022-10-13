@@ -137,7 +137,8 @@ fn capture(
                 println!(
                     "Error : {} on opening choosen interface. Quitting...",
                     e.to_string().red()
-                )
+                );
+                return
             }
         }
 
