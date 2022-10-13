@@ -1,3 +1,4 @@
+
 use std::{
     error::Error,
     fmt::{Display, Formatter},
@@ -86,13 +87,11 @@ impl Display for ParsingError {
 
 impl Error for ParsingError {}
 
-
-
 #[derive(Debug)]
 pub enum GenPdfError {
     GenericError(String),
     OldReportFileOpened,
-    NoConnections
+    NoConnections,
 }
 
 impl Display for GenPdfError {
@@ -105,15 +104,16 @@ impl Display for GenPdfError {
                 write!(f, "Impossible to generate a new report while the old one is opened. Please, close it!")
             }
             Self::NoConnections => {
-                write!(f, "No new packets! Please, consult the old report or wait for new packages")
+                write!(
+                    f,
+                    "No new packets! Please, consult the old report or wait for new packages"
+                )
             }
         }
     }
 }
 
 impl Error for GenPdfError {}
-
-
 
 pub mod packet {
     use std::fmt::{Display, Formatter};
@@ -808,6 +808,9 @@ pub mod protocols {
 //MB
 pub mod connection {
 
+    use std::collections::HashMap;
+    use std::ops::{Add, AddAssign};
+
     //use std::path::Path;
     use chrono::prelude::*;
 
@@ -818,17 +821,14 @@ pub mod connection {
     use genpdf::{elements, fonts, style};
     use pcap::Error;
 
-    const FONT_DIRS: &[&str] = &[
-    "./fonts/Roboto"
-    ];
+    const FONT_DIRS: &[&str] = &["./fonts/Roboto"];
     const DEFAULT_FONT_NAME: &'static str = "Roboto";
     //const MONO_FONT_NAME: &'static str = "LiberationMono";
-    const RED : style::Color = style::Color::Rgb(255, 0, 0);
-    const BLUE :style::Color = style::Color::Rgb(0, 0, 255);
+    const RED: style::Color = style::Color::Rgb(255, 0, 0);
+    const BLUE: style::Color = style::Color::Rgb(0, 0, 255);
 
-
+    #[derive(Clone)]
     pub struct Connection {
-        id: usize,
         ip_src: String,
         ip_dest: String,
         port_src: u16,
@@ -840,15 +840,38 @@ pub mod connection {
         final_timestamp: f64,
     }
 
-    impl Connection {
+    impl AddAssign for Connection {
+        fn add_assign(&mut self, other: Connection) {
+            let initial_t = if self.initial_timestamp < other.initial_timestamp {
+                self.initial_timestamp
+            } else {
+                other.initial_timestamp
+            };
+            let final_t = if self.final_timestamp > other.final_timestamp {
+                self.final_timestamp
+            } else {
+                other.final_timestamp
+            };
+            *self = Self{ 
+                ip_src: self.ip_src.clone(),
+                ip_dest: self.ip_dest.clone(),
+                port_src: self.port_src, 
+                port_dest: self.port_dest, 
+                packets: [self.packets.clone(),other.packets ].concat(), 
+                bytes_exchanged: self.bytes_exchanged + other.bytes_exchanged, 
+                protocol: self.protocol, 
+                initial_timestamp: initial_t, 
+                final_timestamp: final_t 
+            } 
+            
+        }
+    }
 
+    impl Connection {
         /*********************************/
         /*************GETTERS*************/
         /*********************************/
 
-        pub fn get_id(&self) -> usize {
-            self.id
-        }
         pub fn get_ip_src(&self) -> &str {
             self.ip_src.as_str()
         }
@@ -874,72 +897,70 @@ pub mod connection {
             self.bytes_exchanged
         }
 
-
         /***********************************
-        ************************************
-        ************************************/
+         ************************************
+         ************************************/
 
         //It's possible to create a new connection using packets vec and a couple of source and destination newtwork (Ip/Port)
         pub fn from_networks(
-            id: usize,
             ip_src: String,
             ip_dest: String,
             port_src: u16,
             port_dest: u16,
             packets: &[PacketInfo],
-        ) -> Result<Self,Error> {
+        ) -> Result<Self, Error> {
             //Collect packets with same IP/Port Info
             //A connection takes in consideration just a direction to better show information on pdf
             let connection: Vec<PacketInfo> = packets
-            .into_iter()
-            .cloned()
-            .filter(|p| 
-                (
-                    p.get_ip_src().is_none() ||
-                    p.get_ip_dst().is_none() ||
-                    p.get_port_src().is_none() ||
-                    p.get_port_dst().is_none() || (
-                    p.get_ip_src().unwrap() == ip_src &&
-                    p.get_ip_dst().unwrap() == ip_dest &&
-                    p.get_port_src().unwrap() == port_src &&
-                    p.get_port_dst().unwrap() == port_dest
-                )
-            ))
-            .collect();
+                .into_iter()
+                .cloned()
+                .filter(|p| {
+                    (p.get_ip_src().is_none()
+                        || p.get_ip_dst().is_none()
+                        || p.get_port_src().is_none()
+                        || p.get_port_dst().is_none()
+                        || (p.get_ip_src().unwrap() == ip_src
+                            && p.get_ip_dst().unwrap() == ip_dest
+                            && p.get_port_src().unwrap() == port_src
+                            && p.get_port_dst().unwrap() == port_dest))
+                })
+                .collect();
 
             if connection.len() == 0 {
                 return Err(Error::TimeoutExpired);
             }
 
-            //Get the used protocol    
+            //Get the used protocol
             let protocol = connection[0].get_protocol();
             //Sum packets length to get cumulates bytes exchanged
-            let bytes_exchanged :usize = connection.iter().map(|p| p.get_length()).sum();
+            let bytes_exchanged: usize = connection.iter().map(|p| p.get_length()).sum();
             //Get initial and final timestamp
-            let initial_timestamp :f64 = connection.iter().map(|p| p.get_timestamp()).fold(f64::INFINITY, |a, b| a.min(b));
-            let final_timestamp :f64 = connection.iter().map(|p| p.get_timestamp()).fold(f64::NEG_INFINITY, |a, b| a.max(b));
+            let initial_timestamp: f64 = connection
+                .iter()
+                .map(|p| p.get_timestamp())
+                .fold(f64::INFINITY, |a, b| a.min(b));
+            let final_timestamp: f64 = connection
+                .iter()
+                .map(|p| p.get_timestamp())
+                .fold(f64::NEG_INFINITY, |a, b| a.max(b));
 
-            Ok(
-                Connection{
-                    ip_src ,
-                    ip_dest,
-                    port_src,
-                    port_dest,
-                    packets: connection,
-                    bytes_exchanged,
-                    protocol,
-                    initial_timestamp,
-                    final_timestamp,
-                    id
-                }
-            )
-
+            Ok(Connection {
+                ip_src,
+                ip_dest,
+                port_src,
+                port_dest,
+                packets: connection,
+                bytes_exchanged,
+                protocol,
+                initial_timestamp,
+                final_timestamp,
+            })
         }
 
-        pub fn get_connections(packets: &[PacketInfo]) -> Option<Vec<Connection>>{
+        pub fn get_connections(packets: &[PacketInfo]) -> Option<Vec<Connection>> {
             let mut filtered_packets = packets.to_vec();
             let mut connections: Vec<Connection> = Vec::new();
-            let mut counter_id: usize = 1;
+            //let mut counter_id: usize = 1;
 
             //Loop
             loop {
@@ -949,71 +970,107 @@ pub mod connection {
                 }
                 //Take networks info from the first packet we find
                 let first_item = filtered_packets.first().unwrap().clone();
-                
+
                 let current_ip_src = first_item.get_ip_src().unwrap();
                 let current_ip_dst = first_item.get_ip_dst().unwrap();
                 let current_port_src = first_item.get_port_src().unwrap();
                 let current_port_dst = first_item.get_port_dst().unwrap();
 
                 let connection = Connection::from_networks(
-                    counter_id,
                     current_ip_src.to_string(),
                     current_ip_dst.to_string(),
                     current_port_src,
                     current_port_dst,
-                    &packets);
+                    &packets,
+                );
                 if connection.is_err() {
                     return None;
                 }
                 //Create a connection from networks
-                connections.push( connection.unwrap());
+                connections.push(
+                    //(current_ip_src.to_string(), current_port_src, current_ip_dst.to_string(), current_port_dst) ,
+                    connection.unwrap(),
+                );
 
                 //Remove elements already processed from the vec
-                filtered_packets.retain(|p| !( 
-                    p.get_ip_src().unwrap() == current_ip_src &&
-                    p.get_ip_dst().unwrap() == current_ip_dst &&
-                    p.get_port_src().unwrap() == current_port_src &&
-                    p.get_port_dst().unwrap() == current_port_dst   
-                ));
-                //Restart the loop
-                counter_id += 1;
+                filtered_packets.retain(|p| {
+                    !(p.get_ip_src().unwrap() == current_ip_src
+                        && p.get_ip_dst().unwrap() == current_ip_dst
+                        && p.get_port_src().unwrap() == current_port_src
+                        && p.get_port_dst().unwrap() == current_port_dst)
+                });
             }
-    
+
             if connections.is_empty() {
                 return None;
-            }else{
+            } else {
                 return Some(connections);
             }
-    
         }
 
-        pub fn get_report(packets: &[PacketInfo], path: &str) -> Result<(),GenPdfError>{
+        pub fn update_connections(
+            packets: &[PacketInfo],
+            connections: &mut HashMap<(String, u16, String, u16), Connection>,
+        ) -> Option<()> {
+            //Creo nuove connessioni con i nuovi pacchetti
+            let new_connections = Connection::get_connections(&packets);
 
-            let timestamp = chrono::offset::Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
+            //Aggiungo le nuove connessioni alle vecchie controllando che non esistano gia
+            match new_connections {
+                Some(new_cs) => {
+                    for new_c in &new_cs {
+                        let entry = connections.entry((
+                            new_c.get_ip_src().to_string(),
+                            new_c.get_port_src(),
+                            new_c.get_ip_dst().to_string(),
+                            new_c.get_port_dst(),
+                        )).or_insert((new_c.clone()));
+
+                        *entry += new_c.clone(); 
+
+
+                    }
+                    Some(())
+                }
+                None => return None,
+            }
+        }
+
+        pub fn get_report(
+            connections: &mut HashMap<(String, u16, String, u16), Connection>,
+            packets: &[PacketInfo],
+            path: &str,
+        ) -> Result<(), GenPdfError> {
+            let timestamp = chrono::offset::Local::now()
+                .format("%Y-%m-%d_%H-%M-%S")
+                .to_string();
             let report_path = path.to_string();
             //Remove None Elements
-            let mut new_packets :Vec<PacketInfo> = packets.to_vec();
-            new_packets.retain(|p| !( 
-                p.get_ip_src().is_none() ||
-                p.get_ip_dst().is_none() ||
-                p.get_port_src().is_none() ||
-                p.get_port_dst().is_none()   
-            ));
+            let mut new_packets: Vec<PacketInfo> = packets.to_vec();
+            new_packets.retain(|p| {
+                !(p.get_ip_src().is_none()
+                    || p.get_ip_dst().is_none()
+                    || p.get_port_src().is_none()
+                    || p.get_port_dst().is_none())
+            });
+
 
             //Get connections
-            let connections = Connection::get_connections(&new_packets);
-            match connections {
-                Some(c) => {
-
+            match Connection::update_connections(&new_packets, connections) {
+                Some(_) => {
+                    let connections_vec :Vec<Connection> = connections.values().cloned().collect();
                     // Load a font from the file system
                     let font_dir = FONT_DIRS
                         .iter()
                         .filter(|path| std::path::Path::new(path).exists())
                         .next()
                         .expect("Could not find font directory");
-                    let default_font =
-                        fonts::from_files(font_dir, DEFAULT_FONT_NAME, Some(fonts::Builtin::Helvetica))
-                            .expect("Failed to load the default font family");
+                    let default_font = fonts::from_files(
+                        font_dir,
+                        DEFAULT_FONT_NAME,
+                        Some(fonts::Builtin::Helvetica),
+                    )
+                    .expect("Failed to load the default font family");
 
                     // Create a document and set the default font family
                     let mut doc = genpdf::Document::new(default_font);
@@ -1028,175 +1085,329 @@ pub mod connection {
                     //TITLE
                     doc.push(
                         genpdf::elements::Paragraph::new("PacketSniffer Report")
-                        .aligned(Alignment::Left)
-                        .styled(style::Style::new().bold().with_font_size(20).with_color(RED))
+                            .aligned(Alignment::Left)
+                            .styled(
+                                style::Style::new()
+                                    .bold()
+                                    .with_font_size(20)
+                                    .with_color(RED),
+                            ),
                     );
-                    doc.push(
-                        genpdf::elements::Paragraph::new("")
-                    );
+                    doc.push(genpdf::elements::Paragraph::new(""));
                     //PARAGRAPH 1 - All Packet Info
                     doc.push(
                         genpdf::elements::Paragraph::new("All packets:")
-                        .aligned(Alignment::Left)
-                        .styled(style::Style::new().italic().with_font_size(15).with_color(BLUE))
+                            .aligned(Alignment::Left)
+                            .styled(
+                                style::Style::new()
+                                    .italic()
+                                    .with_font_size(15)
+                                    .with_color(BLUE),
+                            ),
                     );
-                    doc.push(
-                        genpdf::elements::Paragraph::new("")
-                    );
-                    
-                    let mut table = elements::TableLayout::new(vec![1, 3, 3, 4, 4, 2, 2, 3, 2, 2, 4]);
+                    doc.push(genpdf::elements::Paragraph::new(""));
+
+                    let mut table =
+                        elements::TableLayout::new(vec![1, 3, 3, 4, 4, 2, 2, 3, 2, 2, 4]);
                     table.set_cell_decorator(elements::FrameCellDecorator::new(true, true, false));
                     let mut row = table.row();
-                    row.push_element(elements::Paragraph::new("Id").styled(style::Style::new().bold().with_font_size(8)).padded(2));
-                    row.push_element(elements::Paragraph::new("Ip Src").styled(style::Style::new().bold().with_font_size(8)).padded(2));
-                    row.push_element(elements::Paragraph::new("Ip Dst").styled(style::Style::new().bold().with_font_size(8)).padded(2));
-                    row.push_element(elements::Paragraph::new("Mac Src").styled(style::Style::new().bold().with_font_size(8)).padded(2));
-                    row.push_element(elements::Paragraph::new("Mac Dst").styled(style::Style::new().bold().with_font_size(8)).padded(2));
-                    row.push_element(elements::Paragraph::new("P.Src").styled(style::Style::new().bold().with_font_size(8)).padded(2));
-                    row.push_element(elements::Paragraph::new("P.Dst").styled(style::Style::new().bold().with_font_size(8)).padded(2));
-                    row.push_element(elements::Paragraph::new("Info").styled(style::Style::new().bold().with_font_size(8)).padded(2));
-                    row.push_element(elements::Paragraph::new("Prot.").styled(style::Style::new().bold().with_font_size(8)).padded(2));
-                    row.push_element(elements::Paragraph::new("Len").styled(style::Style::new().bold().with_font_size(8)).padded(2));
-                    row.push_element(elements::Paragraph::new("Timestamp").styled(style::Style::new().bold().with_font_size(8)).padded(2));
+                    row.push_element(
+                        elements::Paragraph::new("Id")
+                            .styled(style::Style::new().bold().with_font_size(8))
+                            .padded(2),
+                    );
+                    row.push_element(
+                        elements::Paragraph::new("Ip Src")
+                            .styled(style::Style::new().bold().with_font_size(8))
+                            .padded(2),
+                    );
+                    row.push_element(
+                        elements::Paragraph::new("Ip Dst")
+                            .styled(style::Style::new().bold().with_font_size(8))
+                            .padded(2),
+                    );
+                    row.push_element(
+                        elements::Paragraph::new("Mac Src")
+                            .styled(style::Style::new().bold().with_font_size(8))
+                            .padded(2),
+                    );
+                    row.push_element(
+                        elements::Paragraph::new("Mac Dst")
+                            .styled(style::Style::new().bold().with_font_size(8))
+                            .padded(2),
+                    );
+                    row.push_element(
+                        elements::Paragraph::new("P.Src")
+                            .styled(style::Style::new().bold().with_font_size(8))
+                            .padded(2),
+                    );
+                    row.push_element(
+                        elements::Paragraph::new("P.Dst")
+                            .styled(style::Style::new().bold().with_font_size(8))
+                            .padded(2),
+                    );
+                    row.push_element(
+                        elements::Paragraph::new("Info")
+                            .styled(style::Style::new().bold().with_font_size(8))
+                            .padded(2),
+                    );
+                    row.push_element(
+                        elements::Paragraph::new("Prot.")
+                            .styled(style::Style::new().bold().with_font_size(8))
+                            .padded(2),
+                    );
+                    row.push_element(
+                        elements::Paragraph::new("Len")
+                            .styled(style::Style::new().bold().with_font_size(8))
+                            .padded(2),
+                    );
+                    row.push_element(
+                        elements::Paragraph::new("Timestamp")
+                            .styled(style::Style::new().bold().with_font_size(8))
+                            .padded(2),
+                    );
                     row.push().expect("Invalid table row");
 
                     for packet in new_packets {
                         table
                             .row()
-                            .element(elements::Paragraph::new(format!("{}", packet.get_id()))
+                            .element(
+                                elements::Paragraph::new(format!("{}", packet.get_id()))
+                                    .aligned(Alignment::Left)
+                                    .styled(style::Style::new().with_font_size(4))
+                                    .padded(1),
+                            )
+                            .element(
+                                elements::Paragraph::new(format!(
+                                    "{}",
+                                    packet.get_ip_src().unwrap()
+                                ))
                                 .aligned(Alignment::Left)
                                 .styled(style::Style::new().with_font_size(4))
-                                .padded(1)
+                                .padded(2),
                             )
-                            .element(elements::Paragraph::new(format!("{}", packet.get_ip_src().unwrap()))
+                            .element(
+                                elements::Paragraph::new(format!(
+                                    "{}",
+                                    packet.get_ip_dst().unwrap()
+                                ))
                                 .aligned(Alignment::Left)
                                 .styled(style::Style::new().with_font_size(4))
-                                .padded(2)
-                            )   
-                            .element(elements::Paragraph::new(format!("{}", packet.get_ip_dst().unwrap()))
-                                .aligned(Alignment::Left)
-                                .styled(style::Style::new().with_font_size(4))
-                                .padded(2)
+                                .padded(2),
                             )
-                            .element(elements::Paragraph::new(format!("{}", packet.get_mac_src().unwrap()))
+                            .element(
+                                elements::Paragraph::new(format!(
+                                    "{}",
+                                    packet.get_mac_src().unwrap()
+                                ))
                                 .aligned(Alignment::Left)
                                 .styled(style::Style::new().with_font_size(5))
-                                .padded(2)
+                                .padded(2),
                             )
-                            .element(elements::Paragraph::new(format!("{}", packet.get_mac_dst().unwrap()))
+                            .element(
+                                elements::Paragraph::new(format!(
+                                    "{}",
+                                    packet.get_mac_dst().unwrap()
+                                ))
                                 .aligned(Alignment::Left)
                                 .styled(style::Style::new().with_font_size(5))
-                                .padded(2)
+                                .padded(2),
                             )
-                            .element(elements::Paragraph::new(format!("{}", packet.get_port_src().unwrap()))
+                            .element(
+                                elements::Paragraph::new(format!(
+                                    "{}",
+                                    packet.get_port_src().unwrap()
+                                ))
                                 .aligned(Alignment::Left)
                                 .styled(style::Style::new().with_font_size(5))
-                                .padded(2)
+                                .padded(2),
                             )
-                            .element(elements::Paragraph::new(format!("{}", packet.get_port_dst().unwrap()))
+                            .element(
+                                elements::Paragraph::new(format!(
+                                    "{}",
+                                    packet.get_port_dst().unwrap()
+                                ))
                                 .aligned(Alignment::Left)
                                 .styled(style::Style::new().with_font_size(5))
-                                .padded(2)
+                                .padded(2),
                             )
-                            .element(elements::Paragraph::new(format!("{}", packet.get_info().unwrap()))
-                                .aligned(Alignment::Left)
-                                .styled(style::Style::new().with_font_size(3))
-                                .padded(2)
+                            .element(
+                                elements::Paragraph::new(format!("{}", packet.get_info().unwrap()))
+                                    .aligned(Alignment::Left)
+                                    .styled(style::Style::new().with_font_size(3))
+                                    .padded(2),
                             )
-                            .element(elements::Paragraph::new(format!("{:?}", packet.get_protocol()))
-                                .aligned(Alignment::Left)
-                                .styled(style::Style::new().with_font_size(5))
-                                .padded(2)
+                            .element(
+                                elements::Paragraph::new(format!("{:?}", packet.get_protocol()))
+                                    .aligned(Alignment::Left)
+                                    .styled(style::Style::new().with_font_size(5))
+                                    .padded(2),
                             )
-                            .element(elements::Paragraph::new(format!("{}", packet.get_length()))
-                                .aligned(Alignment::Left)
-                                .styled(style::Style::new().with_font_size(5))
-                                .padded(2)
+                            .element(
+                                elements::Paragraph::new(format!("{}", packet.get_length()))
+                                    .aligned(Alignment::Left)
+                                    .styled(style::Style::new().with_font_size(5))
+                                    .padded(2),
                             )
-                            .element(elements::Paragraph::new(format!("{}", packet.get_timestamp()))
-                                .aligned(Alignment::Left)
-                                .styled(style::Style::new().with_font_size(5))
-                                .padded(2)
+                            .element(
+                                elements::Paragraph::new(format!("{}", packet.get_timestamp()))
+                                    .aligned(Alignment::Left)
+                                    .styled(style::Style::new().with_font_size(5))
+                                    .padded(2),
                             )
                             .push()
                             .expect("Invalid table row");
                     }
                     doc.push(table);
 
-                    
                     //PARAGRAPH 2 - Report Info
                     doc.push(elements::PageBreak::new());
 
                     doc.push(
                         genpdf::elements::Paragraph::new("All connections:")
-                        .aligned(Alignment::Left)
-                        .styled(style::Style::new().italic().with_font_size(15).with_color(BLUE))
+                            .aligned(Alignment::Left)
+                            .styled(
+                                style::Style::new()
+                                    .italic()
+                                    .with_font_size(15)
+                                    .with_color(BLUE),
+                            ),
                     );
-                    doc.push(
-                        genpdf::elements::Paragraph::new("")
-                    );
+                    doc.push(genpdf::elements::Paragraph::new(""));
 
                     let mut table2 = elements::TableLayout::new(vec![1, 3, 3, 2, 2, 2, 2, 3, 3]);
                     table2.set_cell_decorator(elements::FrameCellDecorator::new(true, true, false));
                     let mut row2 = table2.row();
-                    row2.push_element(elements::Paragraph::new("Id").styled(style::Style::new().bold().with_font_size(8)).padded(2));
-                    row2.push_element(elements::Paragraph::new("Ip Src").styled(style::Style::new().bold().with_font_size(8)).padded(2));
-                    row2.push_element(elements::Paragraph::new("Ip Dst").styled(style::Style::new().bold().with_font_size(8)).padded(2));
-                    row2.push_element(elements::Paragraph::new("P.Src").styled(style::Style::new().bold().with_font_size(8)).padded(2));
-                    row2.push_element(elements::Paragraph::new("P.Dst").styled(style::Style::new().bold().with_font_size(8)).padded(2));
-                    row2.push_element(elements::Paragraph::new("Prot.").styled(style::Style::new().bold().with_font_size(8)).padded(2));
-                    row2.push_element(elements::Paragraph::new("TOT Len").styled(style::Style::new().bold().with_font_size(8)).padded(2));
-                    row2.push_element(elements::Paragraph::new("I. Timestamp").styled(style::Style::new().bold().with_font_size(8)).padded(2));
-                    row2.push_element(elements::Paragraph::new("F. Timestamp").styled(style::Style::new().bold().with_font_size(8)).padded(2));
+                    row2.push_element(
+                        elements::Paragraph::new("Id")
+                            .styled(style::Style::new().bold().with_font_size(8))
+                            .padded(2),
+                    );
+                    row2.push_element(
+                        elements::Paragraph::new("Ip Src")
+                            .styled(style::Style::new().bold().with_font_size(8))
+                            .padded(2),
+                    );
+                    row2.push_element(
+                        elements::Paragraph::new("Ip Dst")
+                            .styled(style::Style::new().bold().with_font_size(8))
+                            .padded(2),
+                    );
+                    row2.push_element(
+                        elements::Paragraph::new("P.Src")
+                            .styled(style::Style::new().bold().with_font_size(8))
+                            .padded(2),
+                    );
+                    row2.push_element(
+                        elements::Paragraph::new("P.Dst")
+                            .styled(style::Style::new().bold().with_font_size(8))
+                            .padded(2),
+                    );
+                    row2.push_element(
+                        elements::Paragraph::new("Prot.")
+                            .styled(style::Style::new().bold().with_font_size(8))
+                            .padded(2),
+                    );
+                    row2.push_element(
+                        elements::Paragraph::new("TOT Len")
+                            .styled(style::Style::new().bold().with_font_size(8))
+                            .padded(2),
+                    );
+                    row2.push_element(
+                        elements::Paragraph::new("I. Timestamp")
+                            .styled(style::Style::new().bold().with_font_size(8))
+                            .padded(2),
+                    );
+                    row2.push_element(
+                        elements::Paragraph::new("F. Timestamp")
+                            .styled(style::Style::new().bold().with_font_size(8))
+                            .padded(2),
+                    );
                     row2.push().expect("Invalid table row");
 
-                    for current_connection in c {
+                    for current_connection in connections_vec.into_iter().enumerate() {
                         table2
                             .row()
-                            .element(elements::Paragraph::new(format!("{}", current_connection.get_id()))
+                            .element(
+                                elements::Paragraph::new(format!(
+                                    "{}",
+                                    current_connection.0
+                                ))
                                 .aligned(Alignment::Left)
                                 .styled(style::Style::new().with_font_size(5))
-                                .padded(2)
+                                .padded(2),
                             )
-                            .element(elements::Paragraph::new(format!("{}", current_connection.get_ip_src()))
+                            .element(
+                                elements::Paragraph::new(format!(
+                                    "{}",
+                                    current_connection.1.get_ip_src()
+                                ))
                                 .aligned(Alignment::Left)
                                 .styled(style::Style::new().with_font_size(5))
-                                .padded(2)
+                                .padded(2),
                             )
-                            .element(elements::Paragraph::new(format!("{}", current_connection.get_ip_dst()))
+                            .element(
+                                elements::Paragraph::new(format!(
+                                    "{}",
+                                    current_connection.1.get_ip_dst()
+                                ))
                                 .aligned(Alignment::Left)
                                 .styled(style::Style::new().with_font_size(5))
-                                .padded(2)
+                                .padded(2),
                             )
-                            .element(elements::Paragraph::new(format!("{}", current_connection.get_port_src()))
+                            .element(
+                                elements::Paragraph::new(format!(
+                                    "{}",
+                                    current_connection.1.get_port_src()
+                                ))
                                 .aligned(Alignment::Left)
                                 .styled(style::Style::new().with_font_size(5))
-                                .padded(2)
+                                .padded(2),
                             )
-                            .element(elements::Paragraph::new(format!("{}", current_connection.get_port_dst()))
+                            .element(
+                                elements::Paragraph::new(format!(
+                                    "{}",
+                                    current_connection.1.get_port_dst()
+                                ))
                                 .aligned(Alignment::Left)
                                 .styled(style::Style::new().with_font_size(5))
-                                .padded(2)
+                                .padded(2),
                             )
-                            .element(elements::Paragraph::new(format!("{:?}", current_connection.get_protocol()))
+                            .element(
+                                elements::Paragraph::new(format!(
+                                    "{:?}",
+                                    current_connection.1.get_protocol()
+                                ))
                                 .aligned(Alignment::Left)
                                 .styled(style::Style::new().with_font_size(5))
-                                .padded(2)
+                                .padded(2),
                             )
-                            .element(elements::Paragraph::new(format!("{}", current_connection.get_bytes_exchanged()))
+                            .element(
+                                elements::Paragraph::new(format!(
+                                    "{}",
+                                    current_connection.1.get_bytes_exchanged()
+                                ))
                                 .aligned(Alignment::Left)
                                 .styled(style::Style::new().with_font_size(5))
-                                .padded(2)
+                                .padded(2),
                             )
-                            .element(elements::Paragraph::new(format!("{}", current_connection.get_initial_timestamp()))
+                            .element(
+                                elements::Paragraph::new(format!(
+                                    "{}",
+                                    current_connection.1.get_initial_timestamp()
+                                ))
                                 .aligned(Alignment::Left)
                                 .styled(style::Style::new().with_font_size(5))
-                                .padded(2)
+                                .padded(2),
                             )
-                            .element(elements::Paragraph::new(format!("{}", current_connection.get_final_timestamp()))
+                            .element(
+                                elements::Paragraph::new(format!(
+                                    "{}",
+                                    current_connection.1.get_final_timestamp()
+                                ))
                                 .aligned(Alignment::Left)
                                 .styled(style::Style::new().with_font_size(5))
-                                .padded(2)
+                                .padded(2),
                             )
                             .push()
                             .expect("Invalid table row");
@@ -1212,17 +1423,15 @@ pub mod connection {
                     let file_name = format!("output_{}.pdf", timestamp);
                     final_report_path.push_str(&file_name);
 
-                    match doc.render_to_file(final_report_path){
+                    match doc.render_to_file(final_report_path) {
                         Ok(_) => return Ok(()),
                         Err(_e) => return Err(GenPdfError::OldReportFileOpened),
                     }
-                },
-                None => return Err(GenPdfError::NoConnections)
+                }
+                None => return Err(GenPdfError::NoConnections),
             }
-            
         }
     }
-
 }
 //MB
 
