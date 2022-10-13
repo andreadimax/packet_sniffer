@@ -102,10 +102,10 @@ impl Display for GenPdfError {
                 write!(f, "Generic Error: {}", error)
             }
             Self::OldReportFileOpened => {
-                write!(f, "Impossible generate a new report while the old one is opened. Please, close it!")
+                write!(f, "Impossible to generate a new report while the old one is opened. Please, close it!")
             }
             Self::NoConnections => {
-                write!(f, "Impossible generate a report with no connections!")
+                write!(f, "No new packets! Please, consult the old report or wait for new packages")
             }
         }
     }
@@ -939,7 +939,7 @@ pub mod connection {
         pub fn get_connections(packets: &[PacketInfo]) -> Option<Vec<Connection>>{
             let mut filtered_packets = packets.to_vec();
             let mut connections: Vec<Connection> = Vec::new();
-            let mut counterId: usize = 1;
+            let mut counter_id: usize = 1;
 
             //Loop
             loop {
@@ -956,7 +956,7 @@ pub mod connection {
                 let current_port_dst = first_item.get_port_dst().unwrap();
 
                 let connection = Connection::from_networks(
-                    counterId,
+                    counter_id,
                     current_ip_src.to_string(),
                     current_ip_dst.to_string(),
                     current_port_src,
@@ -976,7 +976,7 @@ pub mod connection {
                     p.get_port_dst().unwrap() == current_port_dst   
                 ));
                 //Restart the loop
-                counterId += 1;
+                counter_id += 1;
             }
     
             if connections.is_empty() {

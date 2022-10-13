@@ -165,6 +165,7 @@ fn capture(
         .interval_ms(tir.as_millis().try_into().unwrap())
         .iter();
 
+
     let report_notification_tx2 = report_notification_tx.clone();
     //capture thread
     let t1 = thread::spawn(move || {
@@ -339,9 +340,15 @@ fn capture(
                     let mut new_packets: Vec<PacketInfo> = report_rx.try_iter().collect();
                     //Check at least one new packet is available otherwise we can avoid to gen a new report
                     //(The program is probably paused)
-                    if new_packets.is_empty() {
+                    if new_packets.is_empty() && !quit {
+                        //print_info("No new packages. The latest report is already up to date!", InfoType::Info);
                         continue;
+                    }else if new_packets.is_empty() && quit {
+                    //If no new packets are available and there was a request to quit, no report will be generated
+                        print_info("No new packages. The latest report is already up to date!", InfoType::Info);
+                        break;
                     }
+
                     //NEW PACKETS AVAILABLE
                     packets.append(&mut new_packets);
                     //GENERATE PDF
@@ -479,7 +486,7 @@ fn main() {
         'inner2: loop {
             //Choise n.3 - Report Path
             println!(
-                "\n>Type the path where you want a new report or {}/{} to restart or {}/{} to exit:\n(Do not type anything if you want use current directory)",
+                "\n>Type the path where you want a new report or {}/{} to restart or {}/{} to exit:\n(Do not type anything if you want use current directory, ./ to start from current position in Windows)",
                 "restart".green(),
                 "r".green(),
                 "quit".red(),
