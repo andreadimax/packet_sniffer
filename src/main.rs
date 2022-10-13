@@ -112,24 +112,34 @@ fn capture(
         cap = pcap::Capture::from_device(dvc.as_str())
             .unwrap()
             .immediate_mode(true)
-            .open()
-            .unwrap();
-        if filter.is_empty() == false {
-            match cap.filter(&filter, false) {
-                Ok(()) => {
+            .open();
+        match cap {
+            Ok(ref mut cap) => {
+                if filter.is_empty() == false {
+                    match cap.filter(&filter, false) {
+                        Ok(()) => {
+                            break;
+                        }
+                        Err(_e) => match filter.as_str() {
+                            "quit" | "q" => return,
+                            _ => {
+                                filter.clear();
+                                print_info("Error in filter syntax", InfoType::Error);
+                            }
+                        },
+                    }
+                } else {
                     break;
                 }
-                Err(_e) => match filter.as_str() {
-                    "quit" | "q" => return,
-                    _ => {
-                        filter.clear();
-                        print_info("Error in filter syntax", InfoType::Error);
-                    }
-                },
             }
-        } else {
-            break;
+            Err(e) => {
+                println!(
+                    "Error : {} on opening choosen interface. Quitting...",
+                    e.to_string().red()
+                )
+            }
         }
+
     }
     println!("\nType {} if you want to pause..\n", "stop".yellow());
 
@@ -169,12 +179,9 @@ fn capture(
     //capture thread
     let t1 = thread::spawn(move || {
         {
-            let mut cap = cap.setnonblock();
-            match cap {
-                Ok(mut cap) => {
                     //Avoid blocking capture thread if no packet incoming..
                     //Like using try_recv with channels
-                    cap = cap.setnonblock().unwrap();
+                    let mut cap = cap.unwrap().setnonblock().unwrap();
 
                     let cap = Arc::new(Mutex::new(cap));
 
@@ -266,14 +273,9 @@ fn capture(
                             }
                         }
                     }
-                }
-                Err(e) => {
-                    println!(
-                        "Error : {} on opening choosen interface. Quitting...",
-                        e.to_string().red()
-                    )
-                }
-            }
+
+
+
         }
     });
 
@@ -307,7 +309,7 @@ fn capture(
                                 );
                             }
                             None => {
-                                //print_info(&packet.to_string(), InfoType::Data);
+                               // print_info(&packet.to_string(), InfoType::Data);
 
                                 //Send packets to report thread
                                 parser_tx.send(packet).unwrap();
