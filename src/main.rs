@@ -213,6 +213,7 @@ fn capture(
                                         }
                                         "quit" => {
                                             println!("Quitting...");
+                                            println!("Waiting for the generation of the last report...");
                                             report_notification_tx2.send(true).expect(
                                                 "Could not send signal on quitting channel.",
                                             );
@@ -246,6 +247,7 @@ fn capture(
                                         }
                                         "quit" => {
                                             println!("Quitting...");
+                                            println!("Waiting for the generation of the last report...");
                                             report_notification_tx2.send(true).expect(
                                                 "Could not send signal on quitting channel.",
                                             );

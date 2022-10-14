@@ -1,4 +1,3 @@
-
 use std::{
     error::Error,
     fmt::{Display, Formatter},
@@ -87,7 +86,7 @@ impl Display for ParsingError {
 
 impl Error for ParsingError {}
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum GenPdfError {
     GenericError(String),
     OldReportFileOpened,
@@ -120,7 +119,7 @@ pub mod packet {
 
     use super::{protocols::Protocols, ParsingError};
 
-    #[derive(Clone)]
+    #[derive(Clone, Debug, PartialEq)]
     pub struct PacketInfo {
         id: usize,
         mac_src: Option<String>,
@@ -814,8 +813,8 @@ pub mod connection {
     //use std::path::Path;
     use chrono::prelude::*;
 
-    use crate::GenPdfError;
     use crate::{packet::PacketInfo, protocols::Protocols};
+    use crate::{protocols, GenPdfError};
     use genpdf::Alignment;
     use genpdf::Element as _;
     use genpdf::{elements, fonts, style};
@@ -827,7 +826,7 @@ pub mod connection {
     const RED: style::Color = style::Color::Rgb(255, 0, 0);
     const BLUE: style::Color = style::Color::Rgb(0, 0, 255);
 
-    #[derive(Clone)]
+    #[derive(Clone, Debug, PartialEq)]
     pub struct Connection {
         ip_src: String,
         ip_dest: String,
@@ -852,22 +851,48 @@ pub mod connection {
             } else {
                 other.final_timestamp
             };
-            *self = Self{ 
+            *self = Self {
                 ip_src: self.ip_src.clone(),
                 ip_dest: self.ip_dest.clone(),
-                port_src: self.port_src, 
-                port_dest: self.port_dest, 
-                packets: [self.packets.clone(),other.packets ].concat(), 
-                bytes_exchanged: self.bytes_exchanged + other.bytes_exchanged, 
-                protocol: self.protocol, 
-                initial_timestamp: initial_t, 
-                final_timestamp: final_t 
-            } 
-            
+                port_src: self.port_src,
+                port_dest: self.port_dest,
+                packets: [self.packets.clone(), other.packets].concat(),
+                bytes_exchanged: self.bytes_exchanged + other.bytes_exchanged,
+                protocol: self.protocol,
+                initial_timestamp: initial_t,
+                final_timestamp: final_t,
+            }
         }
     }
 
     impl Connection {
+        /*
+           By default initial protocol is set as Ethernet
+        */
+        pub fn new(
+            ip_src: String,
+            ip_dest: String,
+            port_src: u16,
+            port_dest: u16,
+            protocol: Protocols,
+            bytes_exchanged: usize,
+            packets: &[PacketInfo],
+            initial_timestamp: f64,
+            final_timestamp: f64,
+        ) -> Self {
+            Connection {
+                ip_src,
+                ip_dest,
+                port_src,
+                port_dest,
+                packets: packets.to_vec(),
+                bytes_exchanged,
+                protocol,
+                initial_timestamp,
+                final_timestamp,
+            }
+        }
+
         /*********************************/
         /*************GETTERS*************/
         /*********************************/
@@ -1019,16 +1044,19 @@ pub mod connection {
             match new_connections {
                 Some(new_cs) => {
                     for new_c in &new_cs {
-                        let entry = connections.entry((
-                            new_c.get_ip_src().to_string(),
-                            new_c.get_port_src(),
-                            new_c.get_ip_dst().to_string(),
-                            new_c.get_port_dst(),
-                        )).or_insert((new_c.clone()));
+                        let entry = connections
+                            .entry((
+                                new_c.get_ip_src().to_string(),
+                                new_c.get_port_src(),
+                                new_c.get_ip_dst().to_string(),
+                                new_c.get_port_dst(),
+                            ))
+                            .or_insert((new_c.clone()));
 
-                        *entry += new_c.clone(); 
-
-
+                        //Check it was not the first assignment 
+                        if *entry != *new_c {
+                            *entry += new_c.clone();
+                        }
                     }
                     Some(())
                 }
@@ -1054,11 +1082,10 @@ pub mod connection {
                     || p.get_port_dst().is_none())
             });
 
-
             //Get connections
             match Connection::update_connections(&new_packets, connections) {
                 Some(_) => {
-                    let connections_vec :Vec<Connection> = connections.values().cloned().collect();
+                    let connections_vec: Vec<Connection> = connections.values().cloned().collect();
                     // Load a font from the file system
                     let font_dir = FONT_DIRS
                         .iter()
@@ -1329,13 +1356,10 @@ pub mod connection {
                         table2
                             .row()
                             .element(
-                                elements::Paragraph::new(format!(
-                                    "{}",
-                                    current_connection.0
-                                ))
-                                .aligned(Alignment::Left)
-                                .styled(style::Style::new().with_font_size(5))
-                                .padded(2),
+                                elements::Paragraph::new(format!("{}", current_connection.0))
+                                    .aligned(Alignment::Left)
+                                    .styled(style::Style::new().with_font_size(5))
+                                    .padded(2),
                             )
                             .element(
                                 elements::Paragraph::new(format!(
@@ -1437,12 +1461,18 @@ pub mod connection {
 
 #[cfg(test)]
 mod test {
+    use std::{collections::HashMap, hash::Hash, os, path::Path};
+
+    use pcap::Error;
     use pktparse::{
         ethernet::{EtherType, MacAddress},
         ip::IPProtocol,
     };
 
-    use crate::ParsingError;
+    use crate::{
+        connection::{self, Connection},
+        ParsingError, GenPdfError,
+    };
 
     use super::{
         packet::PacketInfo,
@@ -2290,5 +2320,265 @@ mod test {
                 "Format not supported yet".to_string()
             ))
         );
+    }
+
+    /*********************************
+     ******CONNECTION TESTING**********
+     *********************************/
+
+    #[test]
+    fn from_networks_testing() {
+        //No connection available from passed vec -> Error
+        let mut vec: Vec<PacketInfo> = Vec::new();
+        assert_eq!(
+            Connection::from_networks(
+                "192.168.1.165".to_string(),
+                "20.189.173.12".to_string(),
+                80,
+                53,
+                &vec
+            ),
+            Err(Error::TimeoutExpired)
+        );
+
+        //Check new connection created
+        let mut packet1 = PacketInfo::new(50, 10.5, 1);
+        let mut packet2 = PacketInfo::new(20, 8.2, 2);
+        packet1.set_ip_src("192.168.1.165").unwrap();
+        packet1.set_ip_dst("20.189.173.12").unwrap();
+        packet1.set_port_src(80).unwrap();
+        packet1.set_port_dst(60).unwrap();
+        packet1.set_protocol(Protocols::Ethernet);
+        packet2.set_ip_src("192.168.1.165").unwrap();
+        packet2.set_ip_dst("20.189.173.12").unwrap();
+        packet2.set_port_src(80).unwrap();
+        packet2.set_port_dst(60).unwrap();
+        packet2.set_protocol(Protocols::Ethernet);
+        vec.push(packet1);
+        vec.push(packet2);
+        assert_eq!(
+            Connection::from_networks(
+                "192.168.1.165".to_string(),
+                "20.189.173.12".to_string(),
+                80,
+                60,
+                &vec
+            )
+            .unwrap(),
+            Connection::new(
+                "192.168.1.165".to_string(),
+                "20.189.173.12".to_string(),
+                80,
+                60,
+                Protocols::Ethernet,
+                70,
+                &vec,
+                8.2,
+                10.5
+            )
+        );
+    }
+
+    #[test]
+    fn get_connections_testing() {
+        let mut packets: Vec<PacketInfo> = Vec::new();
+
+        //EMPTY VEC -> EMPTY CONNECTIONS
+        assert_eq!(
+            Connection::get_connections(&packets),
+            None
+        );
+
+        //NORMAL FLOW
+        let mut packet1 = PacketInfo::new(50, 10.5, 1);
+        let mut packet2 = PacketInfo::new(1050, 180.5, 2);
+        let mut packet3 = PacketInfo::new(90, 6.8, 3);
+        let mut packet4 = PacketInfo::new(20, 8.2, 4);
+
+        packet1.set_ip_src("192.168.1.165").unwrap();
+        packet1.set_ip_dst("20.189.173.12").unwrap();
+        packet1.set_port_src(80).unwrap();
+        packet1.set_port_dst(60).unwrap();
+        packet1.set_protocol(Protocols::Ethernet);
+
+        packet2.set_ip_src("192.168.1.0").unwrap();
+        packet2.set_ip_dst("20.189.173.24").unwrap();
+        packet2.set_port_src(61050).unwrap();
+        packet2.set_port_dst(80).unwrap();
+        packet2.set_protocol(Protocols::Udp);
+
+        packet3.set_ip_src("192.168.1.1").unwrap();
+        packet3.set_ip_dst("20.189.173.35").unwrap();
+        packet3.set_port_src(60).unwrap();
+        packet3.set_port_dst(60).unwrap();
+        packet3.set_protocol(Protocols::Arp);
+
+        packet4.set_ip_src("192.168.1.165").unwrap();
+        packet4.set_ip_dst("20.189.173.12").unwrap();
+        packet4.set_port_src(80).unwrap();
+        packet4.set_port_dst(60).unwrap();
+        packet4.set_protocol(Protocols::Ethernet);
+
+        packets.push(packet1.clone());
+        packets.push(packet2.clone());
+        packets.push(packet3.clone());
+        packets.push(packet4.clone());
+
+        let mut connections :Vec<Connection> = Vec::new();
+        let connection1 = Connection::new(
+            "192.168.1.165".to_string(),
+            "20.189.173.12".to_string(),
+            80,
+            60,
+            Protocols::Ethernet,
+            70,
+            &vec![packet1.clone(),packet4.clone()],
+            8.2,
+            10.5,
+        );
+        let connection2 = Connection::new(
+            "192.168.1.0".to_string(),
+            "20.189.173.24".to_string(),
+            61050,
+            80,
+            Protocols::Udp,
+            1050,
+            &vec![packet2.clone()],
+            180.5,
+            180.5,
+        );
+        let connection3 = Connection::new(
+            "192.168.1.1".to_string(),
+            "20.189.173.35".to_string(),
+            60,
+            60,
+            Protocols::Arp,
+            90,
+            &vec![packet3.clone()],
+            6.8,
+            6.8,
+        );
+        connections.push(connection1);
+        connections.push(connection2);
+        connections.push(connection3);
+
+        assert_eq!(
+            Connection::get_connections(&packets).unwrap(),
+            connections
+        );
+    }
+
+    #[test]
+    fn update_connections_testing(){
+        let mut connections : HashMap<(String, u16, String, u16), Connection> = HashMap::new();
+        let mut packets: Vec<PacketInfo> = Vec::new();
+
+        //No new packets to find new connections
+        assert_eq!(
+            Connection::update_connections(&packets,&mut connections),
+            None
+        );
+
+        //New packets in empty hashmap -> New connection added 
+
+        let mut packet1 = PacketInfo::new(50, 10.5, 1);
+        packet1.set_ip_src("192.168.1.165").unwrap();
+        packet1.set_ip_dst("20.189.173.12").unwrap();
+        packet1.set_port_src(80).unwrap();
+        packet1.set_port_dst(60).unwrap();
+        packet1.set_protocol(Protocols::Ethernet);
+        packets.push(packet1.clone());
+
+        Connection::update_connections(&packets,&mut connections);
+        assert!(
+            connections.contains_key(&("192.168.1.165".to_string(),80,"20.189.173.12".to_string(),60)),
+        );
+
+        let connection = Connection::new(
+            "192.168.1.165".to_string(),
+            "20.189.173.12".to_string(),
+            80,
+            60,
+            Protocols::Ethernet,
+            50,
+            &vec![packet1.clone()],
+            10.5,
+            10.5
+        );
+        assert_eq!(
+            *connections.get(&("192.168.1.165".to_string(),80,"20.189.173.12".to_string(),60)).unwrap(),
+            connection
+        );
+
+        //New packets for old connections -> Connection updated
+        packets.clear();
+        let mut packet2 = PacketInfo::new(250, 20.8, 2);
+        packet2.set_ip_src("192.168.1.165").unwrap();
+        packet2.set_ip_dst("20.189.173.12").unwrap();
+        packet2.set_port_src(80).unwrap();
+        packet2.set_port_dst(60).unwrap();
+        packet2.set_protocol(Protocols::Ethernet);
+        packets.push(packet2.clone());
+        
+        Connection::update_connections(&packets,&mut connections);
+        assert!(
+            connections.contains_key(&("192.168.1.165".to_string(),80,"20.189.173.12".to_string(),60)),
+        );
+        let connection2 = Connection::new(
+            "192.168.1.165".to_string(),
+            "20.189.173.12".to_string(),
+            80,
+            60,
+            Protocols::Ethernet,
+            300,
+            &vec![packet1.clone(),packet2.clone()],
+            10.5,
+            20.8,
+        );
+        assert_eq!(
+            *connections.get(&("192.168.1.165".to_string(),80,"20.189.173.12".to_string(),60)).unwrap(),
+            connection2
+        );
+
+    }
+
+    #[test]
+    fn get_report_testing(){
+    
+        //DOES NOT WORK WITH NONE PACKETS!
+
+        let mut connections : HashMap<(String, u16, String, u16), Connection> = HashMap::new();
+        let mut packets: Vec<PacketInfo> = Vec::new();
+
+        //Check wrong path
+
+        //Check file name
+
+        //Check no new packets error
+        assert_eq!(
+            Connection::get_report(&mut connections,&packets,""),
+            Err(GenPdfError::NoConnections)
+        );
+
+        //Check normal flow
+        let mut packet1 = PacketInfo::new(50, 10.5, 1);
+        packet1.set_ip_src("192.168.1.165").unwrap();
+        packet1.set_ip_dst("20.189.173.12").unwrap();
+        packet1.set_mac_src("5C:FB:3A:AC:88:7F").unwrap();
+        packet1.set_mac_dst("A4:91:B1:AE:AA:C2").unwrap();
+        packet1.set_port_src(80).unwrap();
+        packet1.set_port_dst(60).unwrap();
+        packet1.set_protocol(Protocols::Ethernet);
+        packet1.set_info("");
+        packets.push(packet1.clone());
+        
+        let timestamp = chrono::offset::Local::now()
+                .format("%Y-%m-%d_%H-%M-%S")
+                .to_string();
+        Connection::get_report(&mut connections,&packets,"").unwrap();
+        let path = format!("output_{}.pdf",timestamp);
+        println!("./{}", path);
+        assert!(Path::new(&path).exists());
+
     }
 }
