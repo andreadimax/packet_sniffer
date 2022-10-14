@@ -1083,8 +1083,10 @@ pub mod connection {
             
             //Check path
             let report_path = path.trim().to_string();
-            
-            if !report_path.is_empty() && !Path::new(&report_path).exists() {
+            println!("{}", report_path);
+            println!("{}", Path::new(&report_path).is_dir());
+
+            if !(report_path.is_empty()) && !(Path::new(&report_path).is_dir()) {
                 return Err(GenPdfError::WrongPath);
             }
             
@@ -2599,7 +2601,6 @@ mod test {
                 .to_string();
         Connection::get_report(&mut connections,&packets,"").unwrap();
         let path = format!("output_{}.pdf",timestamp);
-        println!("./{}", path);
         assert!(Path::new(&path).exists());
 
         //Check empty path with space is ok
@@ -2612,7 +2613,14 @@ mod test {
         );
 
         let path2 = format!("output_{}.pdf",timestamp);
-        println!("./{}", path2);
+        assert!(Path::new(&path2).exists());
+
+        //Check correct path
+        timestamp = chrono::offset::Local::now()
+            .format("%Y-%m-%d_%H-%M-%S")
+            .to_string();
+        Connection::get_report(&mut connections,&packets,"./hei").unwrap();
+        let path2 = format!("./hei/output_{}.pdf",timestamp);
         assert!(Path::new(&path2).exists());
 
 
