@@ -91,6 +91,7 @@ pub enum GenPdfError {
     GenericError(String),
     OldReportFileOpened,
     NoConnections,
+    WrongPath
 }
 
 impl Display for GenPdfError {
@@ -106,6 +107,12 @@ impl Display for GenPdfError {
                 write!(
                     f,
                     "No new packets! Please, consult the old report or wait for new packages"
+                )
+            }
+            Self::WrongPath => {
+                write!(
+                    f,
+                    "The path does not exist. Please, fix it!"
                 )
             }
         }
@@ -809,6 +816,7 @@ pub mod connection {
 
     use std::collections::HashMap;
     use std::ops::{Add, AddAssign};
+    use std::path::Path;
 
     //use std::path::Path;
     use chrono::prelude::*;
@@ -1072,14 +1080,26 @@ pub mod connection {
             let timestamp = chrono::offset::Local::now()
                 .format("%Y-%m-%d_%H-%M-%S")
                 .to_string();
-            let report_path = path.to_string();
+            
+            //Check path
+            let report_path = path.trim().to_string();
+            
+            if !report_path.is_empty() && !Path::new(&report_path).exists() {
+                return Err(GenPdfError::WrongPath);
+            }
+            
             //Remove None Elements
             let mut new_packets: Vec<PacketInfo> = packets.to_vec();
             new_packets.retain(|p| {
-                !(p.get_ip_src().is_none()
+                !(
+                    p.get_ip_src().is_none()
                     || p.get_ip_dst().is_none()
                     || p.get_port_src().is_none()
-                    || p.get_port_dst().is_none())
+                    || p.get_port_dst().is_none()
+                    || p.get_mac_src().is_none()
+                    || p.get_mac_dst().is_none()
+                    || p.get_info().is_none()                     
+                )
             });
 
             //Get connections
@@ -2551,8 +2571,10 @@ mod test {
         let mut packets: Vec<PacketInfo> = Vec::new();
 
         //Check wrong path
-
-        //Check file name
+        assert_eq!(
+            Connection::get_report(&mut connections,&packets," d"),
+            Err(GenPdfError::WrongPath)
+        );        
 
         //Check no new packets error
         assert_eq!(
@@ -2572,13 +2594,27 @@ mod test {
         packet1.set_info("");
         packets.push(packet1.clone());
         
-        let timestamp = chrono::offset::Local::now()
+        let mut timestamp = chrono::offset::Local::now()
                 .format("%Y-%m-%d_%H-%M-%S")
                 .to_string();
         Connection::get_report(&mut connections,&packets,"").unwrap();
         let path = format!("output_{}.pdf",timestamp);
         println!("./{}", path);
         assert!(Path::new(&path).exists());
+
+        //Check empty path with space is ok
+        timestamp = chrono::offset::Local::now()
+            .format("%Y-%m-%d_%H-%M-%S")
+            .to_string();
+        assert_eq!(
+            Connection::get_report(&mut connections,&packets,"         "),
+            Ok(())
+        );
+
+        let path2 = format!("output_{}.pdf",timestamp);
+        println!("./{}", path2);
+        assert!(Path::new(&path2).exists());
+
 
     }
 }
