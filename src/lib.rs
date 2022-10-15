@@ -438,14 +438,13 @@ pub mod protocols {
                         packet_info.set_info("Arp Request");
                     }
                     arp::Operation::Other(_) => {
-                        println!("ok");
                         packet_info.set_info("Arp generic operation");
                     }
                 }
 
                 Ok((remaining, arp_packet))
             }
-            Err(_) => Err(ParsingError::EthernetParsingError),
+            Err(_) => Err(ParsingError::ArpParsingError),
         }
     }
 
@@ -529,7 +528,6 @@ pub mod protocols {
                     IcmpCode::Redirect(_) => packet_info.set_info("ICMP Redirect"),
                     IcmpCode::EchoReply => packet_info.set_info("ICMP Echo Reply"),
                     IcmpCode::EchoRequest => {
-                        //println!("ok");
                         packet_info.set_info("ICMP Echo Request")
                     }
                     IcmpCode::RouterAdvertisment => {
@@ -812,14 +810,13 @@ pub mod protocols {
 pub mod connection {
 
     use std::collections::HashMap;
-    use std::ops::{Add, AddAssign};
+    use std::ops::{ AddAssign};
     use std::path::Path;
 
     //use std::path::Path;
-    use chrono::prelude::*;
 
     use crate::{packet::PacketInfo, protocols::Protocols};
-    use crate::{protocols, GenPdfError};
+    use crate::{GenPdfError};
     use genpdf::Alignment;
     use genpdf::Element as _;
     use genpdf::{elements, fonts, style};
@@ -945,12 +942,14 @@ pub mod connection {
                 .into_iter()
                 .cloned()
                 .filter(|p| {
-                    (p.get_ip_src().is_none()
+                    (
+                        p.get_ip_src().is_none()
                         || p.get_ip_dst().is_none()
                         || (p.get_ip_src().unwrap() == ip_src
                             && p.get_ip_dst().unwrap() == ip_dest
                             && p.get_port_src().unwrap_or(0) == port_src.unwrap_or(0)
-                            && p.get_port_dst().unwrap_or(0) == port_dest.unwrap_or(0)))
+                            && p.get_port_dst().unwrap_or(0) == port_dest.unwrap_or(0))
+                        )
                 })
                 .collect();
 
@@ -1054,7 +1053,7 @@ pub mod connection {
                                 new_c.get_ip_dst().to_string(),
                                 new_c.get_port_dst(),
                             ))
-                            .or_insert((new_c.clone()));
+                            .or_insert(new_c.clone());
 
                         //Check it was not the first assignment
                         if *entry != *new_c {
@@ -2642,8 +2641,8 @@ mod test {
         timestamp = chrono::offset::Local::now()
             .format("%Y-%m-%d_%H-%M-%S")
             .to_string();
-        Connection::get_report(&mut connections, &packets, "./hei").unwrap();
-        let path2 = format!("./hei/output_{}.pdf", timestamp);
+        Connection::get_report(&mut connections,&packets,"./prova").unwrap();
+        let path2 = format!("./prova/output_{}.pdf",timestamp);
         assert!(Path::new(&path2).exists());
     }
 }

@@ -1,18 +1,15 @@
 use colored::*;
 use eventual::Timer;
 use packet_sniffer::connection::Connection;
-use pcap::{Device, Packet, PacketHeader};
-use signal_hook::SigId;
+use pcap::{Device, PacketHeader};
 use std::collections::HashMap;
 use std::error::Error;
-use std::ffi::OsStr;
 use std::fmt::Display;
-use std::io::{self, stdout, Write};
-use std::iter::Enumerate;
+use std::io::{self};
 use std::num::ParseIntError;
 use std::path::Path;
 use std::sync::mpsc;
-use std::sync::mpsc::{sync_channel, Receiver, RecvError, SyncSender, TryRecvError};
+use std::sync::mpsc::{sync_channel, Receiver, SyncSender, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -25,15 +22,9 @@ enum Message {
 }
 
 enum InfoType {
-    Data,
     Info,
     Error,
 }
-
-#[cfg(windows)]
-const LINE_ENDING: &'static str = "\r\n";
-#[cfg(not(windows))]
-const LINE_ENDING: &'static str = "\n";
 
 #[derive(Debug)]
 enum ReadUserInputError {
@@ -71,9 +62,6 @@ impl Display for ReadUserInputError {
 
 fn print_info(info: &str, info_type: InfoType) {
     match info_type {
-        InfoType::Data => {
-            println!("{}", info);
-        }
         InfoType::Error => {
             println!("{} {}", "[ERR]".red(), info.red());
         }
@@ -184,7 +172,7 @@ fn capture(
         {
                     //Avoid blocking capture thread if no packet incoming..
                     //Like using try_recv with channels
-                    let mut cap = cap.unwrap().setnonblock().unwrap();
+                    let cap = cap.unwrap().setnonblock().unwrap();
 
                     let cap = Arc::new(Mutex::new(cap));
 
