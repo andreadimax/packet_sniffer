@@ -813,14 +813,13 @@ pub mod protocols {
 pub mod connection {
 
     use std::collections::HashMap;
-    use std::ops::{Add, AddAssign};
+    use std::ops::{ AddAssign};
     use std::path::Path;
 
     //use std::path::Path;
-    use chrono::prelude::*;
 
     use crate::{packet::PacketInfo, protocols::Protocols};
-    use crate::{protocols, GenPdfError};
+    use crate::{GenPdfError};
     use genpdf::Alignment;
     use genpdf::Element as _;
     use genpdf::{elements, fonts, style};
@@ -946,14 +945,14 @@ pub mod connection {
                 .into_iter()
                 .cloned()
                 .filter(|p| {
-                    (p.get_ip_src().is_none()
+                    p.get_ip_src().is_none()
                         || p.get_ip_dst().is_none()
                         || p.get_port_src().is_none()
                         || p.get_port_dst().is_none()
                         || (p.get_ip_src().unwrap() == ip_src
                             && p.get_ip_dst().unwrap() == ip_dest
                             && p.get_port_src().unwrap() == port_src
-                            && p.get_port_dst().unwrap() == port_dest))
+                            && p.get_port_dst().unwrap() == port_dest)
                 })
                 .collect();
 
@@ -1057,7 +1056,7 @@ pub mod connection {
                                 new_c.get_ip_dst().to_string(),
                                 new_c.get_port_dst(),
                             ))
-                            .or_insert((new_c.clone()));
+                            .or_insert(new_c.clone());
 
                         //Check it was not the first assignment 
                         if *entry != *new_c {
