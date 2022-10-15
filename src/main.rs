@@ -339,7 +339,7 @@ fn capture(
         //let mut packets: Vec<PacketInfo> = Vec::new();
 
         //Hashmap with Connections
-        let mut connections : HashMap<(String, u16, String, u16), Connection> = HashMap::new();
+        let mut connections : HashMap<(String, Option<u16>, String, Option<u16>), Connection> = HashMap::new();
 
 
         loop {

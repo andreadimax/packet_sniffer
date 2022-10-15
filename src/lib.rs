@@ -91,7 +91,7 @@ pub enum GenPdfError {
     GenericError(String),
     OldReportFileOpened,
     NoConnections,
-    WrongPath
+    WrongPath,
 }
 
 impl Display for GenPdfError {
@@ -110,10 +110,7 @@ impl Display for GenPdfError {
                 )
             }
             Self::WrongPath => {
-                write!(
-                    f,
-                    "The path does not exist. Please, fix it!"
-                )
+                write!(f, "The path does not exist. Please, fix it!")
             }
         }
     }
@@ -838,8 +835,8 @@ pub mod connection {
     pub struct Connection {
         ip_src: String,
         ip_dest: String,
-        port_src: u16,
-        port_dest: u16,
+        port_src: Option<u16>,
+        port_dest: Option<u16>,
         packets: Vec<PacketInfo>,
         bytes_exchanged: usize,
         protocol: Protocols,
@@ -880,8 +877,8 @@ pub mod connection {
         pub fn new(
             ip_src: String,
             ip_dest: String,
-            port_src: u16,
-            port_dest: u16,
+            port_src: Option<u16>,
+            port_dest: Option<u16>,
             protocol: Protocols,
             bytes_exchanged: usize,
             packets: &[PacketInfo],
@@ -911,10 +908,10 @@ pub mod connection {
         pub fn get_ip_dst(&self) -> &str {
             self.ip_dest.as_str()
         }
-        pub fn get_port_src(&self) -> u16 {
+        pub fn get_port_src(&self) -> Option<u16> {
             self.port_src
         }
-        pub fn get_port_dst(&self) -> u16 {
+        pub fn get_port_dst(&self) -> Option<u16> {
             self.port_dest
         }
         pub fn get_protocol(&self) -> Protocols {
@@ -938,8 +935,8 @@ pub mod connection {
         pub fn from_networks(
             ip_src: String,
             ip_dest: String,
-            port_src: u16,
-            port_dest: u16,
+            port_src: Option<u16>,
+            port_dest: Option<u16>,
             packets: &[PacketInfo],
         ) -> Result<Self, Error> {
             //Collect packets with same IP/Port Info
@@ -950,12 +947,10 @@ pub mod connection {
                 .filter(|p| {
                     (p.get_ip_src().is_none()
                         || p.get_ip_dst().is_none()
-                        || p.get_port_src().is_none()
-                        || p.get_port_dst().is_none()
                         || (p.get_ip_src().unwrap() == ip_src
                             && p.get_ip_dst().unwrap() == ip_dest
-                            && p.get_port_src().unwrap() == port_src
-                            && p.get_port_dst().unwrap() == port_dest))
+                            && p.get_port_src().unwrap_or(0) == port_src.unwrap_or(0)
+                            && p.get_port_dst().unwrap_or(0) == port_dest.unwrap_or(0)))
                 })
                 .collect();
 
@@ -1006,8 +1001,8 @@ pub mod connection {
 
                 let current_ip_src = first_item.get_ip_src().unwrap();
                 let current_ip_dst = first_item.get_ip_dst().unwrap();
-                let current_port_src = first_item.get_port_src().unwrap();
-                let current_port_dst = first_item.get_port_dst().unwrap();
+                let current_port_src = first_item.get_port_src();
+                let current_port_dst = first_item.get_port_dst();
 
                 let connection = Connection::from_networks(
                     current_ip_src.to_string(),
@@ -1029,8 +1024,8 @@ pub mod connection {
                 filtered_packets.retain(|p| {
                     !(p.get_ip_src().unwrap() == current_ip_src
                         && p.get_ip_dst().unwrap() == current_ip_dst
-                        && p.get_port_src().unwrap() == current_port_src
-                        && p.get_port_dst().unwrap() == current_port_dst)
+                        && p.get_port_src().unwrap_or(0) == current_port_src.unwrap_or(0)
+                        && p.get_port_dst().unwrap_or(0) == current_port_dst.unwrap_or(0))
                 });
             }
 
@@ -1043,7 +1038,7 @@ pub mod connection {
 
         pub fn update_connections(
             packets: &[PacketInfo],
-            connections: &mut HashMap<(String, u16, String, u16), Connection>,
+            connections: &mut HashMap<(String, Option<u16>, String, Option<u16>), Connection>,
         ) -> Option<()> {
             //Creo nuove connessioni con i nuovi pacchetti
             let new_connections = Connection::get_connections(&packets);
@@ -1061,7 +1056,7 @@ pub mod connection {
                             ))
                             .or_insert((new_c.clone()));
 
-                        //Check it was not the first assignment 
+                        //Check it was not the first assignment
                         if *entry != *new_c {
                             *entry += new_c.clone();
                         }
@@ -1073,25 +1068,25 @@ pub mod connection {
         }
 
         pub fn get_report(
-            connections: &mut HashMap<(String, u16, String, u16), Connection>,
+            connections: &mut HashMap<(String, Option<u16>, String, Option<u16>), Connection>,
             packets: &[PacketInfo],
             path: &str,
         ) -> Result<(), GenPdfError> {
             let timestamp = chrono::offset::Local::now()
                 .format("%Y-%m-%d_%H-%M-%S")
                 .to_string();
-            
+
             //Check path
             let report_path = path.trim().to_string();
-            println!("{}", report_path);
-            println!("{}", Path::new(&report_path).is_dir());
+            //println!("{}", report_path);
 
             if !(report_path.is_empty()) && !(Path::new(&report_path).is_dir()) {
                 return Err(GenPdfError::WrongPath);
             }
-            
-            //Remove None Elements
+
             let mut new_packets: Vec<PacketInfo> = packets.to_vec();
+            //Remove None Elements -> Set Default Value for None Elements during printing
+            /*
             new_packets.retain(|p| {
                 !(
                     p.get_ip_src().is_none()
@@ -1100,9 +1095,10 @@ pub mod connection {
                     || p.get_port_dst().is_none()
                     || p.get_mac_src().is_none()
                     || p.get_mac_dst().is_none()
-                    || p.get_info().is_none()                     
+                    || p.get_info().is_none()
                 )
             });
+            */
 
             //Get connections
             match Connection::update_connections(&new_packets, connections) {
@@ -1157,62 +1153,62 @@ pub mod connection {
                     doc.push(genpdf::elements::Paragraph::new(""));
 
                     let mut table =
-                        elements::TableLayout::new(vec![1, 3, 3, 4, 4, 2, 2, 3, 2, 2, 4]);
+                        elements::TableLayout::new(vec![1, 4, 4, 4, 4, 2, 2, 4, 2, 2, 4]);
                     table.set_cell_decorator(elements::FrameCellDecorator::new(true, true, false));
                     let mut row = table.row();
                     row.push_element(
                         elements::Paragraph::new("Id")
-                            .styled(style::Style::new().bold().with_font_size(8))
+                            .styled(style::Style::new().bold().with_font_size(6))
                             .padded(2),
                     );
                     row.push_element(
                         elements::Paragraph::new("Ip Src")
-                            .styled(style::Style::new().bold().with_font_size(8))
+                            .styled(style::Style::new().bold().with_font_size(6))
                             .padded(2),
                     );
                     row.push_element(
                         elements::Paragraph::new("Ip Dst")
-                            .styled(style::Style::new().bold().with_font_size(8))
+                            .styled(style::Style::new().bold().with_font_size(6))
                             .padded(2),
                     );
                     row.push_element(
                         elements::Paragraph::new("Mac Src")
-                            .styled(style::Style::new().bold().with_font_size(8))
+                            .styled(style::Style::new().bold().with_font_size(6))
                             .padded(2),
                     );
                     row.push_element(
                         elements::Paragraph::new("Mac Dst")
-                            .styled(style::Style::new().bold().with_font_size(8))
+                            .styled(style::Style::new().bold().with_font_size(6))
                             .padded(2),
                     );
                     row.push_element(
                         elements::Paragraph::new("P.Src")
-                            .styled(style::Style::new().bold().with_font_size(8))
+                            .styled(style::Style::new().bold().with_font_size(6))
                             .padded(2),
                     );
                     row.push_element(
                         elements::Paragraph::new("P.Dst")
-                            .styled(style::Style::new().bold().with_font_size(8))
+                            .styled(style::Style::new().bold().with_font_size(6))
                             .padded(2),
                     );
                     row.push_element(
                         elements::Paragraph::new("Info")
-                            .styled(style::Style::new().bold().with_font_size(8))
+                            .styled(style::Style::new().bold().with_font_size(6))
                             .padded(2),
                     );
                     row.push_element(
                         elements::Paragraph::new("Prot.")
-                            .styled(style::Style::new().bold().with_font_size(8))
+                            .styled(style::Style::new().bold().with_font_size(6))
                             .padded(2),
                     );
                     row.push_element(
                         elements::Paragraph::new("Len")
-                            .styled(style::Style::new().bold().with_font_size(8))
+                            .styled(style::Style::new().bold().with_font_size(6))
                             .padded(2),
                     );
                     row.push_element(
                         elements::Paragraph::new("Timestamp")
-                            .styled(style::Style::new().bold().with_font_size(8))
+                            .styled(style::Style::new().bold().with_font_size(6))
                             .padded(2),
                     );
                     row.push().expect("Invalid table row");
@@ -1223,85 +1219,94 @@ pub mod connection {
                             .element(
                                 elements::Paragraph::new(format!("{}", packet.get_id()))
                                     .aligned(Alignment::Left)
-                                    .styled(style::Style::new().with_font_size(4))
+                                    .styled(style::Style::new().with_font_size(3))
                                     .padded(1),
                             )
                             .element(
                                 elements::Paragraph::new(format!(
                                     "{}",
-                                    packet.get_ip_src().unwrap()
+                                    packet.get_ip_src().unwrap_or("/")
                                 ))
                                 .aligned(Alignment::Left)
-                                .styled(style::Style::new().with_font_size(4))
+                                .styled(style::Style::new().with_font_size(3))
                                 .padded(2),
                             )
                             .element(
                                 elements::Paragraph::new(format!(
                                     "{}",
-                                    packet.get_ip_dst().unwrap()
+                                    packet.get_ip_dst().unwrap_or("/")
                                 ))
                                 .aligned(Alignment::Left)
-                                .styled(style::Style::new().with_font_size(4))
+                                .styled(style::Style::new().with_font_size(3))
                                 .padded(2),
                             )
                             .element(
                                 elements::Paragraph::new(format!(
                                     "{}",
-                                    packet.get_mac_src().unwrap()
+                                    packet.get_mac_src().unwrap_or("/")
                                 ))
                                 .aligned(Alignment::Left)
-                                .styled(style::Style::new().with_font_size(5))
+                                .styled(style::Style::new().with_font_size(3))
                                 .padded(2),
                             )
                             .element(
                                 elements::Paragraph::new(format!(
                                     "{}",
-                                    packet.get_mac_dst().unwrap()
+                                    packet.get_mac_dst().unwrap_or("/")
                                 ))
                                 .aligned(Alignment::Left)
-                                .styled(style::Style::new().with_font_size(5))
+                                .styled(style::Style::new().with_font_size(3))
                                 .padded(2),
                             )
                             .element(
                                 elements::Paragraph::new(format!(
                                     "{}",
-                                    packet.get_port_src().unwrap()
+                                    match packet.get_port_dst() {
+                                        Some(port) => port.to_string(),
+                                        None => "/".to_string(),
+                                    }
                                 ))
                                 .aligned(Alignment::Left)
-                                .styled(style::Style::new().with_font_size(5))
+                                .styled(style::Style::new().with_font_size(3))
                                 .padded(2),
                             )
                             .element(
                                 elements::Paragraph::new(format!(
                                     "{}",
-                                    packet.get_port_dst().unwrap()
+                                    match packet.get_port_dst() {
+                                        Some(port) => port.to_string(),
+                                        None => "/".to_string(),
+                                    }
                                 ))
                                 .aligned(Alignment::Left)
-                                .styled(style::Style::new().with_font_size(5))
+                                .styled(style::Style::new().with_font_size(3))
                                 .padded(2),
                             )
                             .element(
-                                elements::Paragraph::new(format!("{}", packet.get_info().unwrap()))
+                                elements::Paragraph::new(format!(
+                                    "{}",
+                                    packet.get_info().unwrap_or("/")
+                                ))
+                                .aligned(Alignment::Left)
+                                .styled(style::Style::new().with_font_size(3))
+                                .padded(2),
+                            )
+                            .element(
+                                elements::Paragraph::new(format!("{:?}", packet.get_protocol()))
                                     .aligned(Alignment::Left)
                                     .styled(style::Style::new().with_font_size(3))
                                     .padded(2),
                             )
                             .element(
-                                elements::Paragraph::new(format!("{:?}", packet.get_protocol()))
-                                    .aligned(Alignment::Left)
-                                    .styled(style::Style::new().with_font_size(5))
-                                    .padded(2),
-                            )
-                            .element(
                                 elements::Paragraph::new(format!("{}", packet.get_length()))
                                     .aligned(Alignment::Left)
-                                    .styled(style::Style::new().with_font_size(5))
+                                    .styled(style::Style::new().with_font_size(3))
                                     .padded(2),
                             )
                             .element(
                                 elements::Paragraph::new(format!("{}", packet.get_timestamp()))
                                     .aligned(Alignment::Left)
-                                    .styled(style::Style::new().with_font_size(5))
+                                    .styled(style::Style::new().with_font_size(3))
                                     .padded(2),
                             )
                             .push()
@@ -1329,47 +1334,47 @@ pub mod connection {
                     let mut row2 = table2.row();
                     row2.push_element(
                         elements::Paragraph::new("Id")
-                            .styled(style::Style::new().bold().with_font_size(8))
+                            .styled(style::Style::new().bold().with_font_size(6))
                             .padded(2),
                     );
                     row2.push_element(
                         elements::Paragraph::new("Ip Src")
-                            .styled(style::Style::new().bold().with_font_size(8))
+                            .styled(style::Style::new().bold().with_font_size(6))
                             .padded(2),
                     );
                     row2.push_element(
                         elements::Paragraph::new("Ip Dst")
-                            .styled(style::Style::new().bold().with_font_size(8))
+                            .styled(style::Style::new().bold().with_font_size(6))
                             .padded(2),
                     );
                     row2.push_element(
                         elements::Paragraph::new("P.Src")
-                            .styled(style::Style::new().bold().with_font_size(8))
+                            .styled(style::Style::new().bold().with_font_size(6))
                             .padded(2),
                     );
                     row2.push_element(
                         elements::Paragraph::new("P.Dst")
-                            .styled(style::Style::new().bold().with_font_size(8))
+                            .styled(style::Style::new().bold().with_font_size(6))
                             .padded(2),
                     );
                     row2.push_element(
                         elements::Paragraph::new("Prot.")
-                            .styled(style::Style::new().bold().with_font_size(8))
+                            .styled(style::Style::new().bold().with_font_size(6))
                             .padded(2),
                     );
                     row2.push_element(
                         elements::Paragraph::new("TOT Len")
-                            .styled(style::Style::new().bold().with_font_size(8))
+                            .styled(style::Style::new().bold().with_font_size(6))
                             .padded(2),
                     );
                     row2.push_element(
                         elements::Paragraph::new("I. Timestamp")
-                            .styled(style::Style::new().bold().with_font_size(8))
+                            .styled(style::Style::new().bold().with_font_size(6))
                             .padded(2),
                     );
                     row2.push_element(
                         elements::Paragraph::new("F. Timestamp")
-                            .styled(style::Style::new().bold().with_font_size(8))
+                            .styled(style::Style::new().bold().with_font_size(6))
                             .padded(2),
                     );
                     row2.push().expect("Invalid table row");
@@ -1380,7 +1385,7 @@ pub mod connection {
                             .element(
                                 elements::Paragraph::new(format!("{}", current_connection.0))
                                     .aligned(Alignment::Left)
-                                    .styled(style::Style::new().with_font_size(5))
+                                    .styled(style::Style::new().with_font_size(4))
                                     .padded(2),
                             )
                             .element(
@@ -1389,7 +1394,7 @@ pub mod connection {
                                     current_connection.1.get_ip_src()
                                 ))
                                 .aligned(Alignment::Left)
-                                .styled(style::Style::new().with_font_size(5))
+                                .styled(style::Style::new().with_font_size(4))
                                 .padded(2),
                             )
                             .element(
@@ -1398,25 +1403,31 @@ pub mod connection {
                                     current_connection.1.get_ip_dst()
                                 ))
                                 .aligned(Alignment::Left)
-                                .styled(style::Style::new().with_font_size(5))
+                                .styled(style::Style::new().with_font_size(4))
                                 .padded(2),
                             )
                             .element(
                                 elements::Paragraph::new(format!(
                                     "{}",
-                                    current_connection.1.get_port_src()
+                                    match current_connection.1.get_port_src() {
+                                        Some(port) => port.to_string(),
+                                        None => "/".to_string(),
+                                    }
                                 ))
                                 .aligned(Alignment::Left)
-                                .styled(style::Style::new().with_font_size(5))
+                                .styled(style::Style::new().with_font_size(4))
                                 .padded(2),
                             )
                             .element(
                                 elements::Paragraph::new(format!(
                                     "{}",
-                                    current_connection.1.get_port_dst()
+                                    match current_connection.1.get_port_src() {
+                                        Some(port) => port.to_string(),
+                                        None => "/".to_string(),
+                                    }
                                 ))
                                 .aligned(Alignment::Left)
-                                .styled(style::Style::new().with_font_size(5))
+                                .styled(style::Style::new().with_font_size(4))
                                 .padded(2),
                             )
                             .element(
@@ -1425,7 +1436,7 @@ pub mod connection {
                                     current_connection.1.get_protocol()
                                 ))
                                 .aligned(Alignment::Left)
-                                .styled(style::Style::new().with_font_size(5))
+                                .styled(style::Style::new().with_font_size(4))
                                 .padded(2),
                             )
                             .element(
@@ -1434,7 +1445,7 @@ pub mod connection {
                                     current_connection.1.get_bytes_exchanged()
                                 ))
                                 .aligned(Alignment::Left)
-                                .styled(style::Style::new().with_font_size(5))
+                                .styled(style::Style::new().with_font_size(4))
                                 .padded(2),
                             )
                             .element(
@@ -1443,7 +1454,7 @@ pub mod connection {
                                     current_connection.1.get_initial_timestamp()
                                 ))
                                 .aligned(Alignment::Left)
-                                .styled(style::Style::new().with_font_size(5))
+                                .styled(style::Style::new().with_font_size(4))
                                 .padded(2),
                             )
                             .element(
@@ -1452,7 +1463,7 @@ pub mod connection {
                                     current_connection.1.get_final_timestamp()
                                 ))
                                 .aligned(Alignment::Left)
-                                .styled(style::Style::new().with_font_size(5))
+                                .styled(style::Style::new().with_font_size(4))
                                 .padded(2),
                             )
                             .push()
@@ -1493,7 +1504,7 @@ mod test {
 
     use crate::{
         connection::{self, Connection},
-        ParsingError, GenPdfError,
+        GenPdfError, ParsingError,
     };
 
     use super::{
@@ -2356,8 +2367,8 @@ mod test {
             Connection::from_networks(
                 "192.168.1.165".to_string(),
                 "20.189.173.12".to_string(),
-                80,
-                53,
+                Some(80),
+                Some(53),
                 &vec
             ),
             Err(Error::TimeoutExpired)
@@ -2382,16 +2393,16 @@ mod test {
             Connection::from_networks(
                 "192.168.1.165".to_string(),
                 "20.189.173.12".to_string(),
-                80,
-                60,
+                Some(80),
+                Some(60),
                 &vec
             )
             .unwrap(),
             Connection::new(
                 "192.168.1.165".to_string(),
                 "20.189.173.12".to_string(),
-                80,
-                60,
+                Some(80),
+                Some(60),
                 Protocols::Ethernet,
                 70,
                 &vec,
@@ -2406,10 +2417,7 @@ mod test {
         let mut packets: Vec<PacketInfo> = Vec::new();
 
         //EMPTY VEC -> EMPTY CONNECTIONS
-        assert_eq!(
-            Connection::get_connections(&packets),
-            None
-        );
+        assert_eq!(Connection::get_connections(&packets), None);
 
         //NORMAL FLOW
         let mut packet1 = PacketInfo::new(50, 10.5, 1);
@@ -2446,23 +2454,23 @@ mod test {
         packets.push(packet3.clone());
         packets.push(packet4.clone());
 
-        let mut connections :Vec<Connection> = Vec::new();
+        let mut connections: Vec<Connection> = Vec::new();
         let connection1 = Connection::new(
             "192.168.1.165".to_string(),
             "20.189.173.12".to_string(),
-            80,
-            60,
+            Some(80),
+            Some(60),
             Protocols::Ethernet,
             70,
-            &vec![packet1.clone(),packet4.clone()],
+            &vec![packet1.clone(), packet4.clone()],
             8.2,
             10.5,
         );
         let connection2 = Connection::new(
             "192.168.1.0".to_string(),
             "20.189.173.24".to_string(),
-            61050,
-            80,
+            Some(61050),
+            Some(80),
             Protocols::Udp,
             1050,
             &vec![packet2.clone()],
@@ -2472,8 +2480,8 @@ mod test {
         let connection3 = Connection::new(
             "192.168.1.1".to_string(),
             "20.189.173.35".to_string(),
-            60,
-            60,
+            Some(60),
+            Some(60),
             Protocols::Arp,
             90,
             &vec![packet3.clone()],
@@ -2484,24 +2492,21 @@ mod test {
         connections.push(connection2);
         connections.push(connection3);
 
-        assert_eq!(
-            Connection::get_connections(&packets).unwrap(),
-            connections
-        );
+        assert_eq!(Connection::get_connections(&packets).unwrap(), connections);
     }
 
     #[test]
-    fn update_connections_testing(){
-        let mut connections : HashMap<(String, u16, String, u16), Connection> = HashMap::new();
+    fn update_connections_testing() {
+        let mut connections: HashMap<(String, Option<u16>, String, Option<u16>), Connection> = HashMap::new();
         let mut packets: Vec<PacketInfo> = Vec::new();
 
         //No new packets to find new connections
         assert_eq!(
-            Connection::update_connections(&packets,&mut connections),
+            Connection::update_connections(&packets, &mut connections),
             None
         );
 
-        //New packets in empty hashmap -> New connection added 
+        //New packets in empty hashmap -> New connection added
 
         let mut packet1 = PacketInfo::new(50, 10.5, 1);
         packet1.set_ip_src("192.168.1.165").unwrap();
@@ -2511,24 +2516,34 @@ mod test {
         packet1.set_protocol(Protocols::Ethernet);
         packets.push(packet1.clone());
 
-        Connection::update_connections(&packets,&mut connections);
-        assert!(
-            connections.contains_key(&("192.168.1.165".to_string(),80,"20.189.173.12".to_string(),60)),
-        );
+        Connection::update_connections(&packets, &mut connections);
+        assert!(connections.contains_key(&(
+            "192.168.1.165".to_string(),
+            Some(80),
+            "20.189.173.12".to_string(),
+            Some(60)
+        )),);
 
         let connection = Connection::new(
             "192.168.1.165".to_string(),
             "20.189.173.12".to_string(),
-            80,
-            60,
+            Some(80),
+            Some(60),
             Protocols::Ethernet,
             50,
             &vec![packet1.clone()],
             10.5,
-            10.5
+            10.5,
         );
         assert_eq!(
-            *connections.get(&("192.168.1.165".to_string(),80,"20.189.173.12".to_string(),60)).unwrap(),
+            *connections
+                .get(&(
+                    "192.168.1.165".to_string(),
+                    Some(80),
+                    "20.189.173.12".to_string(),
+                    Some(60)
+                ))
+                .unwrap(),
             connection
         );
 
@@ -2541,46 +2556,54 @@ mod test {
         packet2.set_port_dst(60).unwrap();
         packet2.set_protocol(Protocols::Ethernet);
         packets.push(packet2.clone());
-        
-        Connection::update_connections(&packets,&mut connections);
-        assert!(
-            connections.contains_key(&("192.168.1.165".to_string(),80,"20.189.173.12".to_string(),60)),
-        );
+
+        Connection::update_connections(&packets, &mut connections);
+        assert!(connections.contains_key(&(
+            "192.168.1.165".to_string(),
+            Some(80),
+            "20.189.173.12".to_string(),
+            Some(60)
+        )),);
         let connection2 = Connection::new(
             "192.168.1.165".to_string(),
             "20.189.173.12".to_string(),
-            80,
-            60,
+            Some(80),
+            Some(60),
             Protocols::Ethernet,
             300,
-            &vec![packet1.clone(),packet2.clone()],
+            &vec![packet1.clone(), packet2.clone()],
             10.5,
             20.8,
         );
         assert_eq!(
-            *connections.get(&("192.168.1.165".to_string(),80,"20.189.173.12".to_string(),60)).unwrap(),
+            *connections
+                .get(&(
+                    "192.168.1.165".to_string(),
+                    Some(80),
+                    "20.189.173.12".to_string(),
+                    Some(60)
+                ))
+                .unwrap(),
             connection2
         );
-
     }
 
     #[test]
-    fn get_report_testing(){
-    
+    fn get_report_testing() {
         //DOES NOT WORK WITH NONE PACKETS!
 
-        let mut connections : HashMap<(String, u16, String, u16), Connection> = HashMap::new();
+        let mut connections: HashMap<(String, Option<u16>, String, Option<u16>), Connection> = HashMap::new();
         let mut packets: Vec<PacketInfo> = Vec::new();
 
         //Check wrong path
         assert_eq!(
-            Connection::get_report(&mut connections,&packets," d"),
+            Connection::get_report(&mut connections, &packets, " d"),
             Err(GenPdfError::WrongPath)
-        );        
+        );
 
         //Check no new packets error
         assert_eq!(
-            Connection::get_report(&mut connections,&packets,""),
+            Connection::get_report(&mut connections, &packets, ""),
             Err(GenPdfError::NoConnections)
         );
 
@@ -2595,12 +2618,12 @@ mod test {
         packet1.set_protocol(Protocols::Ethernet);
         packet1.set_info("");
         packets.push(packet1.clone());
-        
+
         let mut timestamp = chrono::offset::Local::now()
-                .format("%Y-%m-%d_%H-%M-%S")
-                .to_string();
-        Connection::get_report(&mut connections,&packets,"").unwrap();
-        let path = format!("output_{}.pdf",timestamp);
+            .format("%Y-%m-%d_%H-%M-%S")
+            .to_string();
+        Connection::get_report(&mut connections, &packets, "").unwrap();
+        let path = format!("output_{}.pdf", timestamp);
         assert!(Path::new(&path).exists());
 
         //Check empty path with space is ok
@@ -2608,21 +2631,19 @@ mod test {
             .format("%Y-%m-%d_%H-%M-%S")
             .to_string();
         assert_eq!(
-            Connection::get_report(&mut connections,&packets,"         "),
+            Connection::get_report(&mut connections, &packets, "         "),
             Ok(())
         );
 
-        let path2 = format!("output_{}.pdf",timestamp);
+        let path2 = format!("output_{}.pdf", timestamp);
         assert!(Path::new(&path2).exists());
 
         //Check correct path
         timestamp = chrono::offset::Local::now()
             .format("%Y-%m-%d_%H-%M-%S")
             .to_string();
-        Connection::get_report(&mut connections,&packets,"./hei").unwrap();
-        let path2 = format!("./hei/output_{}.pdf",timestamp);
+        Connection::get_report(&mut connections, &packets, "./hei").unwrap();
+        let path2 = format!("./hei/output_{}.pdf", timestamp);
         assert!(Path::new(&path2).exists());
-
-
     }
 }
