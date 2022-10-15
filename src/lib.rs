@@ -441,14 +441,13 @@ pub mod protocols {
                         packet_info.set_info("Arp Request");
                     }
                     arp::Operation::Other(_) => {
-                        println!("ok");
                         packet_info.set_info("Arp generic operation");
                     }
                 }
 
                 Ok((remaining, arp_packet))
             }
-            Err(_) => Err(ParsingError::EthernetParsingError),
+            Err(_) => Err(ParsingError::ArpParsingError),
         }
     }
 
@@ -532,7 +531,6 @@ pub mod protocols {
                     IcmpCode::Redirect(_) => packet_info.set_info("ICMP Redirect"),
                     IcmpCode::EchoReply => packet_info.set_info("ICMP Echo Reply"),
                     IcmpCode::EchoRequest => {
-                        //println!("ok");
                         packet_info.set_info("ICMP Echo Request")
                     }
                     IcmpCode::RouterAdvertisment => {
@@ -1083,8 +1081,8 @@ pub mod connection {
             
             //Check path
             let report_path = path.trim().to_string();
-            println!("{}", report_path);
-            println!("{}", Path::new(&report_path).is_dir());
+            // println!("{}", report_path);
+            // println!("{}", Path::new(&report_path).is_dir());
 
             if !(report_path.is_empty()) && !(Path::new(&report_path).is_dir()) {
                 return Err(GenPdfError::WrongPath);
@@ -2619,8 +2617,8 @@ mod test {
         timestamp = chrono::offset::Local::now()
             .format("%Y-%m-%d_%H-%M-%S")
             .to_string();
-        Connection::get_report(&mut connections,&packets,"./hei").unwrap();
-        let path2 = format!("./hei/output_{}.pdf",timestamp);
+        Connection::get_report(&mut connections,&packets,"./prova").unwrap();
+        let path2 = format!("./prova/output_{}.pdf",timestamp);
         assert!(Path::new(&path2).exists());
 
 
