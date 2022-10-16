@@ -647,7 +647,7 @@ pub mod protocols {
 
                 match code {
                     Opcode::StandardQuery => {
-                        let mut info = String::new();
+                        let mut info;
 
                         //queries can be requests or response depending on query flag in header
                         match qr {
@@ -987,14 +987,12 @@ pub mod connection {
                 .into_iter()
                 .cloned()
                 .filter(|p| {
-                    (
                         p.get_ip_src().is_none()
                         || p.get_ip_dst().is_none()
                         || (p.get_ip_src().unwrap() == ip_src
                             && p.get_ip_dst().unwrap() == ip_dest
                             && p.get_port_src().unwrap_or(0) == port_src.unwrap_or(0)
                             && p.get_port_dst().unwrap_or(0) == port_dest.unwrap_or(0))
-                        )
                 })
                 .collect();
 
@@ -1141,7 +1139,7 @@ pub mod connection {
         - Path does not exist or it is not an empty string
         - No connections to generate a report
         - An error happens during pdf rendering
-        
+
         */
 
         pub fn get_report(
@@ -1161,7 +1159,7 @@ pub mod connection {
                 return Err(GenPdfError::WrongPath);
             }
 
-            let mut new_packets: Vec<PacketInfo> = packets.to_vec();
+            let new_packets: Vec<PacketInfo> = packets.to_vec();
             //Remove None Elements -> Set Default Value for None Elements during printing
             /*
             new_packets.retain(|p| {
@@ -1571,7 +1569,7 @@ pub mod connection {
 
 #[cfg(test)]
 mod test {
-    use std::{collections::HashMap, hash::Hash, os, path::Path};
+    use std::{collections::HashMap,path::Path};
 
     use pcap::Error;
     use pktparse::{
@@ -1580,7 +1578,7 @@ mod test {
     };
 
     use crate::{
-        connection::{self, Connection},
+        connection::{Connection},
         GenPdfError, ParsingError,
     };
 

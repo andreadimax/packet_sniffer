@@ -386,11 +386,11 @@ fn main() {
     let (tx, rx) = sync_channel(256);
 
     //Device to sniff
-    let mut dvc = String::new();
+    let mut dvc;
     //ReportTime Interval - Default -> 5 secs
-    let mut report_interval = Duration::new(5, 0);
+    let mut report_interval;
     //Path for report
-    let mut report_path = String::new();
+    let report_path;
 
     println!("\n> Welcome in PacketSniffer (Rust Edition) By A.Di Mauro, M.Basilico, M.L.Colangelo\n");
 
