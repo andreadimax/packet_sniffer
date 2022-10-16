@@ -4,22 +4,27 @@ use std::{
 };
 
 /*
-   lib.rs - Andrea Di Mauro 288048 - Last Edit: 19/09/2022
+   lib.rs - 
+   Andrea Di Mauro 288048, Michele Basilico 282513 - MariaLetizia Colangelo 
+   Last Edit: 16/10/2022
 
    Main library file for support the packet sniffing process of an application
-   The library is mainly composed by 2 modules:
+   The library is mainly composed by 3 modules:
 
     - packet
     - protocols
+    - connection
 
-   The first one define the Packet struct, used to collect info about the
+   Packet:
+   The first one defines the Packet struct, used to collect info about the
    packet during the processing of the binary data. In fact the user will
    have to instantiate a PacketInfo struct and pass them to function
    defined in the procotols module. Once the parsing is completed the
    PacketInfo struct implement the Display trait to print easily the info
-   collected
+   collected;
 
-   The second one define all the functions used to parse the different
+   Protocols:
+   The second one defines all the functions used to parse the different
    layers of the ISO/OSI strcuture. Supported layers are listed below.
    A function, 'parse_packet', collect them and can be used to parse
    directly an entire packet (for the only supported protocols)
@@ -34,6 +39,31 @@ use std::{
     - Icmp version 4
     - Dns
     - Tls
+
+    Connection:
+    The third one defines the Connection struct, used to collect information about
+    the connection between a couple of networks such as:
+    - Ip Src : Source Network Ip 
+    - Port Src : Source Port. It can be optional for some protocol types (Arp, Icmp..)
+    - Ip Dst : Destination Network Ip
+    - Port Dst : Destination Port. It can be optional for some protocol types (Arp, Icmp..)
+    - Protocol: Protocol used during transmission
+    - Packets: A vec containing all packets exchanged during transmission
+    - Bytes Exchanged: Total bytes exchanged during transmission
+    - Initial Timestamp: First Packet Timestamp of the connection 
+    - Final Timestamp: Last Packet Timestamp of the connection
+
+    It is possible create a connection using all the required information or from_connection function
+    that creates a connection from a packets vec and the networks info to sniff.
+
+    It is also possible to get connections from a packets vec or update a connections hashmap with
+    new packets.
+
+    A connection supports AddAssign Operator to sum two Connections
+
+    Finally, the module allows to generate a pdf report containing all the information
+    sniffed and passed as parameters. 
+
 
 */
 
@@ -822,6 +852,7 @@ pub mod connection {
     use genpdf::{elements, fonts, style};
     use pcap::Error;
 
+    //COLORS AND FONTS USED TO PDF REPORT GENERATION
     const FONT_DIRS: &[&str] = &["./fonts/Roboto"];
     const DEFAULT_FONT_NAME: &'static str = "Roboto";
     //const MONO_FONT_NAME: &'static str = "LiberationMono";
@@ -841,6 +872,11 @@ pub mod connection {
         final_timestamp: f64,
     }
 
+    /*
+    Connection supports AddAssign operator usage. 
+    It operates in place so a mutable connection is required 
+    as first operator
+    */
     impl AddAssign for Connection {
         fn add_assign(&mut self, other: Connection) {
             let initial_t = if self.initial_timestamp < other.initial_timestamp {
@@ -868,9 +904,6 @@ pub mod connection {
     }
 
     impl Connection {
-        /*
-           By default initial protocol is set as Ethernet
-        */
         pub fn new(
             ip_src: String,
             ip_dest: String,
@@ -928,7 +961,19 @@ pub mod connection {
          ************************************
          ************************************/
 
-        //It's possible to create a new connection using packets vec and a couple of source and destination newtwork (Ip/Port)
+        /*
+        This function allows you to generate the required connection 
+        between networks passed as arguments.
+        This function only uses packets belonging to the incoming connection, discarding the others. 
+        Finally, it calculates the total of bytes exchanged 
+        and finds the initial and final timestamp.
+
+        If there are no packets belonging to the incoming connection, 
+        an error will be returned.
+        If packets vec contains packets without ip_src or ip_dst (None)
+        they will be not used for generated connection
+        */
+
         pub fn from_networks(
             ip_src: String,
             ip_dest: String,
@@ -984,6 +1029,12 @@ pub mod connection {
             })
         }
 
+        /*
+        Function to get all the connections available for the packets vec
+        supplied as parameters.
+        It returns an error if it is impossible 
+        generate a new connection.
+        */
         pub fn get_connections(packets: &[PacketInfo]) -> Option<Vec<Connection>> {
             let mut filtered_packets = packets.to_vec();
             let mut connections: Vec<Connection> = Vec::new();
@@ -1035,6 +1086,13 @@ pub mod connection {
             }
         }
 
+        /*
+        This function updates an hashmap of connection,
+        searching for new connection and adding them to the hashmap
+        or updating the old one with new packets info.
+
+        It returns None when no packets are supplied
+        */
         pub fn update_connections(
             packets: &[PacketInfo],
             connections: &mut HashMap<(String, Option<u16>, String, Option<u16>), Connection>,
@@ -1065,6 +1123,26 @@ pub mod connection {
                 None => return None,
             }
         }
+
+
+        /*
+        This function takes new packets and old connections as parameters and 
+        generates a pdf report containing two kind of info:
+        Paragraph1:
+        Packets Info;
+        Paragraph2:
+        Connections Info;
+        Connections Info will be updated with new packets info before to print them.
+        
+        A path must be supllied. If you want to use current directory
+        it is possible to pass an empty string.
+
+        This function returns an error in the following situations:
+        - Path does not exist or it is not an empty string
+        - No connections to generate a report
+        - An error happens during pdf rendering
+        
+        */
 
         pub fn get_report(
             connections: &mut HashMap<(String, Option<u16>, String, Option<u16>), Connection>,
